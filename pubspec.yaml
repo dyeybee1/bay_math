@@ -1,0 +1,40 @@
+name: instructional_math_app
+description: >
+  Instructional mathematics application for Grades 4-6.
+  Phase 0 foundation: architecture, routing shell, theming, and Supabase
+  bootstrap only. No business features are implemented yet.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.7.0
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # --- State management ---
+  flutter_riverpod: ^3.3.2
+
+  # --- Routing ---
+  go_router: ^16.2.0
+
+  # --- Backend (Supabase, free tier) ---
+  supabase_flutter: ^2.12.4
+
+  # --- Environment / secrets loading (no hardcoded keys) ---
+  flutter_dotenv: ^5.2.0
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - .env
