@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../dev/component_gallery/component_gallery_screen.dart';
 import '../../features/auth_placeholder/presentation/login_placeholder_screen.dart';
 import '../../features/error/presentation/not_found_screen.dart';
 import '../../features/error/presentation/unauthorized_screen.dart';
@@ -29,6 +31,14 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.unauthorizedPlaceholder,
         builder: (context, state) => const UnauthorizedScreen(),
       ),
+      // Development-only: previews the reusable widget library. Never
+      // registered in release builds, so it cannot ship to a production
+      // tablet/desktop build even if left in place.
+      if (!kReleaseMode)
+        GoRoute(
+          path: AppRoutes.devComponentGallery,
+          builder: (context, state) => const ComponentGalleryScreen(),
+        ),
     ],
     errorBuilder: (context, state) => const NotFoundScreen(),
   );

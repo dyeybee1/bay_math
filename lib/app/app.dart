@@ -15,7 +15,7 @@ class App extends ConsumerWidget {
     final GoRouter router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(
-      title: 'Instructional Math App',
+      title: 'BAYMATH',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       routerConfig: router,
