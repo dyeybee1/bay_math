@@ -63,7 +63,10 @@ class AppDialog extends StatelessWidget {
 
     return Dialog(
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
+        constraints: BoxConstraints(
+          maxWidth: maxWidth,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: Column(
@@ -82,7 +85,12 @@ class AppDialog extends StatelessWidget {
               ],
               if (content != null) ...<Widget>[
                 const SizedBox(height: AppSpacing.md),
-                content!,
+                // Content can grow arbitrarily tall (e.g. a dynamic list of
+                // form rows) — Flexible + scroll view lets it take up to
+                // whatever room is left under the maxHeight cap above
+                // instead of overflowing the dialog. A no-op when content
+                // already fits: no visible scrollbar, no layout change.
+                Flexible(child: SingleChildScrollView(child: content!)),
               ],
               if (actions != null && actions!.isNotEmpty) ...<Widget>[
                 const SizedBox(height: AppSpacing.lg),

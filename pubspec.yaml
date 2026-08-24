@@ -5,36 +5,60 @@ description: >
   bootstrap only. No business features are implemented yet.
 publish_to: "none"
 version: 0.1.0+1
-
 environment:
   sdk: ^3.7.0
   flutter: ">=3.27.0"
-
 dependencies:
   flutter:
     sdk: flutter
-
   # --- State management ---
   flutter_riverpod: ^3.3.2
-
   # --- Routing ---
   go_router: ^16.2.0
-
   # --- Backend (Supabase, free tier) ---
   supabase_flutter: ^2.12.4
-
   # --- Environment / secrets loading (no hardcoded keys) ---
   flutter_dotenv: ^5.2.0
-
+  # --- Phase 6: opening External Activity links from the student quiz list ---
+  url_launcher: ^6.3.2
+  # --- Phase 8: Quiz Scores by Lesson / Overall Accuracy charts on the
+  # Statistics screen. No chart-drawing pattern existed in this codebase
+  # before this phase; fl_chart is a commonly-used, actively maintained
+  # Flutter chart package.
+  fl_chart: ^0.69.2
+  # --- Teacher Quiz Results: CSV export (Save As dialog + CSV encoding) ---
+  file_picker: ^8.1.2
+  csv: ^6.0.0
+  # --- Bulk Add Students: .xlsx paste-import file picker. `csv` (above)
+  # already covers the .csv side of this same feature and is reused as-is;
+  # nothing already in this file reads .xlsx, so this is a new dependency.
+  #
+  # Originally added as `excel: ^4.0.6`, but `flutter pub get` failed: the
+  # entire `excel` package line (2.x through at least 4.0.6) caps its `xml`
+  # dependency below 7.0.0, which conflicts with `pdf ^3.13.0` above
+  # requiring `xml ^7.0.1` — a real, structural version clash, confirmed by
+  # the actual pub resolver error, not a guess. Switched to `excel_plus`
+  # instead: a source-compatible drop-in fork of `excel` (same public API —
+  # `Excel`, `Sheet`, `Data`, `CellValue` and its subtypes are all
+  # unchanged, only the import path differs) that has already moved to
+  # `xml ^7.0.1`, matching `pdf` exactly and resolving the conflict without
+  # touching the existing `pdf` dependency at all. Verified directly against
+  # https://pub.dev/packages/excel_plus at the time of this edit (published
+  # 2.14.2, dependencies listed there include `xml ^7.0.1`) — this pin, unlike
+  # the original `excel` one, was checked against pub.dev rather than
+  # written from memory.
+  excel_plus: ^2.14.2
+  # --- Performance Reports: PDF export ---
+  pdf: ^3.13.0
   cupertino_icons: ^1.0.8
-
+  # --- Brand typography (BayMath Student Login visual refresh) ---
+  google_fonts: ^6.2.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-
 flutter:
   uses-material-design: true
-
   assets:
     - .env
+    - assets/images/

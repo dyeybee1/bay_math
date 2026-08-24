@@ -1,0 +1,65 @@
+/// The typed failure hierarchy every repository maps exceptions into.
+///
+/// Widgets/providers never handle raw [PostgrestException]/[AuthException]/
+/// network errors directly — repositories are the only layer that imports
+/// `supabase_flutter`, and they always translate its exceptions into one of
+/// these before letting them propagate. Phase 4 architecture, Part 12.
+sealed class AppFailure implements Exception {
+  const AppFailure(this.message);
+
+  /// A short, user-facing message. Safe to show directly in the UI — never
+  /// a raw database/server error string.
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// The device appears to be offline, or the request couldn't reach the
+/// server at all. Safe to retry.
+final class NetworkFailure extends AppFailure {
+  const NetworkFailure([
+    super.message = 'Could not connect. Check your internet connection.',
+  ]);
+}
+
+/// The current session is no longer valid (expired, revoked, or malformed).
+/// Triggers the Unified Session-Expiration Policy (Phase 4.1 architecture,
+/// §3) — sessionProvider transitions to "expired" as this failure is
+/// produced, which is what drives the reactive redirect to login.
+final class SessionExpiredFailure extends AppFailure {
+  const SessionExpiredFailure([
+    super.message = 'Your session has expired. Please log in again.',
+  ]);
+}
+
+/// The request was well-formed but rejected for a business-rule reason the
+/// user can fix (e.g. a password that's too short, an email already in
+/// use). Shown inline on the relevant field, not as a global error.
+final class ValidationFailure extends AppFailure {
+  const ValidationFailure(super.message);
+}
+
+/// The caller is authenticated but not permitted to do this. Distinct from
+/// [SessionExpiredFailure] on purpose — the fix here is not "log in again."
+final class NotAuthorizedFailure extends AppFailure {
+  const NotAuthorizedFailure([
+    super.message = 'You are not permitted to do this.',
+  ]);
+}
+
+/// The requested row/resource does not exist (or is not visible to the
+/// caller, which — by RLS design — looks identical from the outside).
+final class NotFoundFailure extends AppFailure {
+  const NotFoundFailure([
+    super.message = 'The requested item was not found.',
+  ]);
+}
+
+/// Anything unexpected. Logged for diagnosis; never shows a raw stack
+/// trace or database error string to the user.
+final class ServerFailure extends AppFailure {
+  const ServerFailure([
+    super.message = 'Something went wrong. Please try again.',
+  ]);
+}

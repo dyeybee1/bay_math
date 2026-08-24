@@ -6,7 +6,8 @@ import 'router/app_router.dart';
 import 'theme/app_theme.dart';
 
 /// Root application widget. Purely a shell: theme + router.
-/// No business screens are referenced beyond the Phase 0 placeholders.
+/// Routing/redirect logic lives entirely in app_router.dart — this widget
+/// only wires the resolved GoRouter instance into MaterialApp.router.
 class App extends ConsumerWidget {
   const App({super.key});
 

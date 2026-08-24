@@ -14,6 +14,7 @@ export 'cards/app_card.dart';
 export 'dialogs/app_dialog.dart';
 export 'feedback/app_badge.dart';
 export 'feedback/app_chip.dart';
+export 'inputs/app_dropdown.dart';
 export 'inputs/app_search_bar.dart';
 export 'inputs/app_text_field.dart';
 export 'layout/app_divider.dart';
