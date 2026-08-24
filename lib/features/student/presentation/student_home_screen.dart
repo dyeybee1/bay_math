@@ -256,7 +256,7 @@ class _HomeHeader extends ConsumerWidget {
             child: Row(
               children: <Widget>[
                 Image.asset(
-                  'assets/images/baymath_logo.png',
+                  'assets/images/baymath_logo_for_login.png',
                   height: isShort ? 42 : 48,
                   fit: BoxFit.contain,
                   semanticLabel: 'BayMath',
