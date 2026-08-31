@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/constants/app_radius.dart';
+import '../../../app/constants/app_spacing.dart';
 import '../../../app/router/app_routes.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/providers/session_provider.dart';
 import '../../../core/providers/supabase_providers.dart';
-import '../../../core/widgets/widgets.dart';
-import '../../../app/constants/app_spacing.dart';
+import 'widgets/auth_presentation.dart';
 
 /// Unified Teacher/Admin login. Both roles authenticate identically via
-/// Supabase Auth — which one signed in (and, for a Teacher, whether they're
-/// approved yet) is resolved from `profiles` by [sessionProvider] after
-/// sign-in, then the router redirects accordingly. This screen never makes
-/// that decision itself.
+/// Supabase Auth. The signed-in role and Teacher approval status are resolved
+/// by [sessionProvider], then the router redirects accordingly. This screen
+/// deliberately remains presentation-only and never makes that decision.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -24,35 +24,38 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final FocusNode _emailFocusNode = FocusNode();
+  final FocusNode _passwordFocusNode = FocusNode();
 
   bool _isSubmitting = false;
+  bool _obscurePassword = true;
   String? _errorText;
 
-  // --- Brand palette used only on this screen -----------------------------
-  // The rest of the app deliberately uses a muted blue (see AppColors'
-  // doc comment). This screen is a brand/marketing moment though — it's
-  // built to match the BAYMATH reference design pixel-for-pixel, which
-  // uses a vivid royal blue + gold, not the muted in-app palette.
-  static const Color _brandBlue = Color(0xFF1B4FE0);
-  static const Color _brandGold = Color(0xFFFFC93C);
-
-  /// Below this width the two-column brand panel no longer has room to
-  /// breathe next to a usable form, so we fall back to a single column.
-  static const double _wideBreakpoint = 900;
+  static const double _twoColumnBreakpoint = 860;
+  static const double _maxShellWidth = 1180;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
+    if (_isSubmitting) return;
+
     final String email = _emailController.text.trim();
     final String password = _passwordController.text;
 
     if (email.isEmpty || password.isEmpty) {
       setState(() => _errorText = 'Enter your email and password.');
+      if (email.isEmpty) {
+        _emailFocusNode.requestFocus();
+      } else {
+        _passwordFocusNode.requestFocus();
+      }
       return;
     }
 
@@ -65,362 +68,411 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await ref
           .read(authRepositoryProvider)
           .signInWithPassword(email: email, password: password);
-      // Don't rely solely on the auth-state-change stream event to update
-      // sessionProvider — on Flutter Web that event has proven unreliable
-      // to arrive promptly (the same class of issue register_screen.dart
-      // already works around). Force an explicit re-resolve so the router's
-      // reactive redirect actually has a resolved session to react to.
+      // Keep the existing explicit refresh: the auth-state-change stream can
+      // arrive late on Flutter Web, while routing needs the resolved profile.
       ref.read(sessionProvider.notifier).refresh();
     } on AppFailure catch (failure) {
-      setState(() => _errorText = failure.message);
+      if (mounted) setState(() => _errorText = failure.message);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Shared form (email, password, log in, or-divider, register link).
-  // Identical widget tree/behavior on both the wide and compact layouts —
-  // only the surrounding chrome differs.
-  // ---------------------------------------------------------------------
-  Widget _buildForm(BuildContext context, bool sessionResolving) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+  @override
+  Widget build(BuildContext context) {
+    // After successful authentication the provider resolves the account role.
+    // Keep the form disabled and visibly loading through that transition.
+    final bool sessionResolving = ref.watch(sessionProvider).isLoading;
     final bool disabled = _isSubmitting || sessionResolving;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        AppTextField(
-          controller: _emailController,
-          label: 'Email',
-          prefixIcon: Icons.mail_outline_rounded,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.next,
-          enabled: !disabled,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        AppTextField(
-          controller: _passwordController,
-          type: AppTextFieldType.password,
-          label: 'Password',
-          prefixIcon: Icons.lock_outline_rounded,
-          textInputAction: TextInputAction.done,
-          enabled: !disabled,
-          onSubmitted: (_) => _submit(),
-          errorText: _errorText,
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        AppButton(
-          label: 'Log In',
-          trailingIcon: Icons.arrow_forward_rounded,
-          isFullWidth: true,
-          isLoading: disabled,
-          onPressed: disabled ? null : _submit,
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        Row(
-          children: <Widget>[
-            Expanded(child: Divider(color: colorScheme.outlineVariant)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-              child: Text(
-                'or',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
+    return Scaffold(
+      backgroundColor: AuthPalette.canvas,
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool useTwoColumns =
+                  constraints.maxWidth >= _twoColumnBreakpoint;
+              final bool compactHeight = constraints.maxHeight < 780;
+              final double horizontalInset = switch (constraints.maxWidth) {
+                >= 1440 => AppSpacing.xxl,
+                >= 1024 => AppSpacing.xl,
+                _ => AppSpacing.md,
+              };
+              final double verticalInset =
+                  compactHeight ? AppSpacing.md : AppSpacing.xl;
+              final double minimumHeight = (constraints.maxHeight -
+                      (verticalInset * 2))
+                  .clamp(0, double.infinity);
+              final double shellHeight =
+                  compactHeight
+                      ? minimumHeight.clamp(620, 680)
+                      : minimumHeight.clamp(680, 720);
+
+              return SingleChildScrollView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: horizontalInset,
+                  vertical: verticalInset,
                 ),
-              ),
-            ),
-            Expanded(child: Divider(color: colorScheme.outlineVariant)),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Text(
-          "Don't have an account?",
-          textAlign: TextAlign.center,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
-        ),
-        Center(
-          child: AppButton(
-            label: 'Register as a Teacher',
-            trailingIcon: Icons.arrow_forward_rounded,
-            variant: AppButtonVariant.text,
-            onPressed: disabled ? null : () => context.push(AppRoutes.register),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Rounded-square icon + caption used in the three feature callouts on
-  /// the wide layout's brand panel ("Interactive Lessons", etc).
-  Widget _buildFeatureBadge({required IconData icon, required String label}) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.18),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Icon(icon, color: Colors.white, size: 26),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          width: 92,
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              height: 1.25,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Left-hand brand panel. Background is the app's own
-  /// `baymath_login_bg_left.png` asset (a straight crop of the blue half
-  /// of the original combined reference background — same math-symbol
-  /// pattern, not a redrawn one), with the BAYMATH lockup, headline,
-  /// supporting copy, and the three feature callouts on top.
-  Widget _buildBrandPanel(BuildContext context) {
-    final Widget content = ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 640),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          FractionallySizedBox(
-            widthFactor: 0.72,
-            child: Image.asset('assets/images/baymath_logo_for_login.png'),
-          ),
-          const SizedBox(height: 28),
-          const Text.rich(
-            TextSpan(
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                height: 1.15,
-              ),
-              children: <InlineSpan>[
-                TextSpan(text: 'Learn. Practice. '),
-                TextSpan(text: 'Master.', style: TextStyle(color: _brandGold)),
-              ],
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 14),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 340),
-            child: Text(
-              'Empowering teachers and students to achieve more '
-              'in mathematics through e-learning.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.92),
-                fontSize: 15,
-                height: 1.45,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(height: 40),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: <Widget>[
-              _buildFeatureBadge(
-                icon: Icons.menu_book_rounded,
-                label: 'Explore\nLessons',
-              ),
-              _buildFeatureBadge(
-                icon: Icons.show_chart_rounded,
-                label: 'Track\nProgress',
-              ),
-              _buildFeatureBadge(
-                icon: Icons.emoji_events_rounded,
-                label: 'Achieve\nExcellence',
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        Image.asset(
-          'assets/images/baymath_login_bg_left.png',
-          fit: BoxFit.cover,
-        ),
-        SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 32),
-          child: content,
-        ),
-      ],
-    );
-  }
-
-  /// Right-hand sign-in panel. Background is the app's own
-  /// `baymath_login_bg_right.png` asset (a straight crop of the white
-  /// half of the original combined reference background — the same
-  /// corner dot-grids, wave, and books/pencil-cup illustration, not
-  /// redrawn), with the heading, subtitle, and [AppCard] on top.
-  Widget _buildSignInPanel(BuildContext context, bool sessionResolving) {
-    final Widget content = ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 480),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          const SizedBox(height: 24),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Text(
-                'Welcome back!',
-                style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF13214A),
-                  height: 1.1,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Transform.rotate(
-                angle: -0.35,
-                child: const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: _brandGold,
-                  size: 22,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const Text.rich(
-            TextSpan(
-              style: TextStyle(fontSize: 15, color: Color(0xFF5B6270)),
-              children: <InlineSpan>[
-                TextSpan(text: 'Log in to your '),
-                TextSpan(
-                  text: 'BAYMATH',
-                  style: TextStyle(
-                    color: _brandBlue,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                TextSpan(text: ' account'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 40),
-          AppCard(
-            padding: const EdgeInsets.all(32),
-            child: _buildForm(context, sessionResolving),
-          ),
-        ],
-      ),
-    );
-
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        Image.asset(
-          'assets/images/baymath_login_bg_right.png',
-          fit: BoxFit.cover,
-        ),
-        SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
-          child: Center(child: content),
-        ),
-      ],
-    );
-  }
-
-  /// Narrow-viewport fallback: a single centered card, no room for the
-  /// brand panel — used below [_wideBreakpoint].
-  Widget _buildCompactLayout(BuildContext context, bool sessionResolving) {
-    return AppPageContainer(
-      scrollable: true,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Center(
-                child: Image.asset(
-                  'assets/images/baymath_logo.png',
-                  height: 56,
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              AppCard(
-                size: AppComponentSize.large,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Text(
-                      'Welcome back!',
-                      style: Theme.of(context).textTheme.headlineSmall,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      'Log in to your BAYMATH account',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: minimumHeight),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: _maxShellWidth,
+                      ),
+                      child: _buildShell(
+                        context,
+                        disabled: disabled,
+                        useTwoColumns: useTwoColumns,
+                        compactHeight: compactHeight,
+                        shellHeight: shellHeight,
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.lg),
-                    _buildForm(context, sessionResolving),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              );
+            },
           ),
         ),
       ),
     );
   }
+
+  Widget _buildShell(
+    BuildContext context, {
+    required bool disabled,
+    required bool useTwoColumns,
+    required bool compactHeight,
+    required double shellHeight,
+  }) {
+    final Widget accessPanel = _AccessPanel(
+      emailController: _emailController,
+      passwordController: _passwordController,
+      emailFocusNode: _emailFocusNode,
+      passwordFocusNode: _passwordFocusNode,
+      disabled: disabled,
+      isSubmitting: disabled,
+      obscurePassword: _obscurePassword,
+      errorText: _errorText,
+      compactHeight: compactHeight,
+      onSubmit: _submit,
+      onTogglePassword: () {
+        setState(() => _obscurePassword = !_obscurePassword);
+      },
+      onRegister: () => context.push(AppRoutes.register),
+    );
+
+    final Widget content =
+        useTwoColumns
+            ? SizedBox(
+              height: shellHeight,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(flex: 57, child: accessPanel),
+                  const Expanded(flex: 43, child: _WorkspacePanel()),
+                ],
+              ),
+            )
+            : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[accessPanel, const _CompactWorkspacePanel()],
+            );
+
+    return AuthShellSurface(child: content);
+  }
+}
+
+class _AccessPanel extends StatelessWidget {
+  const _AccessPanel({
+    required this.emailController,
+    required this.passwordController,
+    required this.emailFocusNode,
+    required this.passwordFocusNode,
+    required this.disabled,
+    required this.isSubmitting,
+    required this.obscurePassword,
+    required this.errorText,
+    required this.compactHeight,
+    required this.onSubmit,
+    required this.onTogglePassword,
+    required this.onRegister,
+  });
+
+  final TextEditingController emailController;
+  final TextEditingController passwordController;
+  final FocusNode emailFocusNode;
+  final FocusNode passwordFocusNode;
+  final bool disabled;
+  final bool isSubmitting;
+  final bool obscurePassword;
+  final String? errorText;
+  final bool compactHeight;
+  final VoidCallback onSubmit;
+  final VoidCallback onTogglePassword;
+  final VoidCallback onRegister;
 
   @override
   Widget build(BuildContext context) {
-    // Once sign-in succeeds, sessionProvider goes back into a loading state
-    // while it resolves the profile — keep the screen showing a spinner
-    // through that window instead of flickering back to the idle form.
-    final bool sessionResolving = ref.watch(sessionProvider).isLoading;
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final double verticalPadding = compactHeight ? AppSpacing.lg : 40;
+    final double sectionGap = compactHeight ? 18 : AppSpacing.lg;
 
-    return Scaffold(
-      body: LayoutBuilder(
+    final EdgeInsets panelPadding = EdgeInsets.symmetric(
+      horizontal: compactHeight ? AppSpacing.xl : 52,
+      vertical: verticalPadding,
+    );
+    final Widget formContent = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 470),
+        child: FocusTraversalGroup(
+          policy: OrderedTraversalPolicy(),
+          child: AutofillGroup(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                AuthBrandLogo(width: compactHeight ? 174 : 190),
+                SizedBox(height: compactHeight ? 20 : AppSpacing.xl),
+                const Text(
+                  'TEACHER & ADMINISTRATOR ACCESS',
+                  style: TextStyle(
+                    color: AuthPalette.primaryMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.25,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Welcome back',
+                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                    color: AuthPalette.ink,
+                    fontSize: compactHeight ? 30 : 34,
+                    fontWeight: FontWeight.w700,
+                    height: 1.08,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Sign in to your BayMath workspace to support teaching, '
+                  'learning, and school operations.',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    height: 1.5,
+                  ),
+                ),
+                SizedBox(height: sectionGap),
+                const AuthFieldLabel(label: 'Email address'),
+                const SizedBox(height: AppSpacing.sm),
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(1),
+                  child: AuthTextField(
+                    key: const Key('login_email_field'),
+                    controller: emailController,
+                    focusNode: emailFocusNode,
+                    enabled: !disabled,
+                    hintText: 'name@school.edu',
+                    semanticLabel: 'Email address',
+                    prefixIcon: Icons.mail_outline_rounded,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    autofillHints: const <String>[
+                      AutofillHints.username,
+                      AutofillHints.email,
+                    ],
+                    onSubmitted: (_) => passwordFocusNode.requestFocus(),
+                  ),
+                ),
+                SizedBox(height: compactHeight ? 14 : AppSpacing.md),
+                const AuthFieldLabel(label: 'Password'),
+                const SizedBox(height: AppSpacing.sm),
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(2),
+                  child: AuthTextField(
+                    key: const Key('login_password_field'),
+                    controller: passwordController,
+                    focusNode: passwordFocusNode,
+                    enabled: !disabled,
+                    hintText: 'Enter your password',
+                    semanticLabel: 'Password',
+                    prefixIcon: Icons.lock_outline_rounded,
+                    obscureText: obscurePassword,
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const <String>[AutofillHints.password],
+                    suffix: AuthPasswordVisibilityButton(
+                      key: const Key('login_password_visibility'),
+                      obscurePassword: obscurePassword,
+                      enabled: !disabled,
+                      onPressed: onTogglePassword,
+                    ),
+                    onSubmitted: (_) => onSubmit(),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AuthFormNotice(
+                  key:
+                      errorText == null
+                          ? null
+                          : const Key('login_error_message'),
+                  guidance: 'Use your Teacher or Administrator account.',
+                  errorText: errorText,
+                ),
+                SizedBox(height: compactHeight ? 14 : 18),
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(3),
+                  child: AuthPrimaryButton(
+                    key: const Key('login_submit_button'),
+                    label: 'Sign in to workspace',
+                    loadingLabel: 'Signing in…',
+                    isLoading: isSubmitting,
+                    onPressed: disabled ? null : onSubmit,
+                  ),
+                ),
+                SizedBox(height: compactHeight ? 14 : AppSpacing.lg),
+                Container(
+                  padding: const EdgeInsets.only(top: AppSpacing.md),
+                  decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: Color(0xFFE3E9EE))),
+                  ),
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: <Widget>[
+                      Text(
+                        'New teacher?',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      FocusTraversalOrder(
+                        order: const NumericFocusOrder(4),
+                        child: TextButton(
+                          key: const Key('login_registration_button'),
+                          onPressed: disabled ? null : onRegister,
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(0, 40),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm,
+                            ),
+                            foregroundColor: AuthPalette.primary,
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Text('Create a teacher account'),
+                              SizedBox(width: AppSpacing.xs),
+                              Icon(Icons.north_east_rounded, size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!constraints.hasBoundedHeight) {
+          return Padding(padding: panelPadding, child: formContent);
+        }
+
+        final double contentHeight = (constraints.maxHeight -
+                panelPadding.vertical)
+            .clamp(0, double.infinity);
+        return SingleChildScrollView(
+          padding: panelPadding,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: contentHeight),
+            child: formContent,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _WorkspacePanel extends StatelessWidget {
+  const _WorkspacePanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: AuthPalette.softBlue),
+      child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool isWide = constraints.maxWidth >= _wideBreakpoint;
-          if (!isWide) {
-            return _buildCompactLayout(context, sessionResolving);
-          }
+          final bool compactHeight = constraints.maxHeight < 680;
+          final double inset = compactHeight ? AppSpacing.xl : 44;
+          final double contentHeight = (constraints.maxHeight - (inset * 2))
+              .clamp(0, double.infinity);
 
-          // Straight vertical split, 45% brand panel / 55% sign-in panel —
-          // matches the reference exactly, no wavy/curved divider between
-          // the two halves.
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          return Stack(
+            fit: StackFit.expand,
             children: <Widget>[
-              Expanded(flex: 45, child: _buildBrandPanel(context)),
-              Expanded(
-                flex: 55,
-                child: _buildSignInPanel(context, sessionResolving),
+              const CustomPaint(painter: _AcademicPatternPainter()),
+              SingleChildScrollView(
+                padding: EdgeInsets.all(inset),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: contentHeight),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const _WorkspaceBadge(),
+                      SizedBox(height: compactHeight ? 28 : 52),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'A clearer place to lead math learning.',
+                            style: Theme.of(
+                              context,
+                            ).textTheme.headlineMedium?.copyWith(
+                              color: AuthPalette.ink,
+                              fontSize: compactHeight ? 27 : 30,
+                              fontWeight: FontWeight.w700,
+                              height: 1.16,
+                              letterSpacing: -0.45,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'One entry point for teachers and administrators '
+                            'to plan, monitor, and support every class.',
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyLarge?.copyWith(
+                              color: const Color(0xFF506779),
+                              height: 1.55,
+                            ),
+                          ),
+                          SizedBox(
+                            height:
+                                compactHeight ? AppSpacing.lg : AppSpacing.xl,
+                          ),
+                          const _LearningPathCard(),
+                        ],
+                      ),
+                      SizedBox(height: compactHeight ? 28 : 48),
+                      const _WorkspaceFooter(),
+                    ],
+                  ),
+                ),
               ),
             ],
           );
@@ -428,4 +480,272 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
     );
   }
+}
+
+class _CompactWorkspacePanel extends StatelessWidget {
+  const _CompactWorkspacePanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: AuthPalette.softBlue),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            const _WorkspaceBadge(compact: true),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Text(
+                'A shared workspace for BayMath teachers and administrators.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AuthPalette.ink,
+                  fontWeight: FontWeight.w600,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceBadge extends StatelessWidget {
+  const _WorkspaceBadge({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 7 : AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFD5E0E8)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(Icons.school_outlined, size: 16, color: AuthPalette.navy),
+          if (!compact) ...<Widget>[
+            const SizedBox(width: AppSpacing.sm),
+            const Text(
+              'EDUCATOR WORKSPACE',
+              style: TextStyle(
+                color: AuthPalette.navy,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LearningPathCard extends StatelessWidget {
+  const _LearningPathCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FBFC),
+        borderRadius: AppRadius.largeAll,
+        border: Border.all(color: const Color(0xFFD4E0E7)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x0D203950),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 38,
+                height: 38,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFDCE8F0),
+                  borderRadius: AppRadius.mediumAll,
+                ),
+                child: const Icon(
+                  Icons.menu_book_outlined,
+                  color: AuthPalette.navy,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      'Mathematics learning',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AuthPalette.ink,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'From lesson to lasting progress',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF6B7D89),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          const _LearningPath(),
+        ],
+      ),
+    );
+  }
+}
+
+class _LearningPath extends StatelessWidget {
+  const _LearningPath();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        const _PathNode(label: 'LEARN', isComplete: true),
+        Expanded(child: Container(height: 2, color: const Color(0xFF8FAABD))),
+        const _PathNode(label: 'PRACTICE', isComplete: true),
+        Expanded(child: Container(height: 2, color: const Color(0xFFD5DFE5))),
+        const _PathNode(label: 'MASTER', isComplete: false),
+      ],
+    );
+  }
+}
+
+class _PathNode extends StatelessWidget {
+  const _PathNode({required this.label, required this.isComplete});
+
+  final String label;
+  final bool isComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: isComplete ? AuthPalette.navy : AuthPalette.gold,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 3),
+            boxShadow: const <BoxShadow>[
+              BoxShadow(color: Color(0x1A203950), blurRadius: 4),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF667B89),
+            fontSize: 8,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.7,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WorkspaceFooter extends StatelessWidget {
+  const _WorkspaceFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: <Widget>[
+        SizedBox(
+          width: 24,
+          child: Divider(color: AuthPalette.gold, thickness: 2),
+        ),
+        SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            'Built for the people who guide learning.',
+            style: TextStyle(
+              color: Color(0xFF5A7080),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AcademicPatternPainter extends CustomPainter {
+  const _AcademicPatternPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint gridPaint =
+        Paint()
+          ..color = const Color(0x0F55758E)
+          ..strokeWidth = 1;
+
+    for (double x = 24; x < size.width; x += 44) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    }
+    for (double y = 24; y < size.height; y += 44) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    final Paint curvePaint =
+        Paint()
+          ..color = const Color(0x2455758E)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2;
+    final Path curve =
+        Path()
+          ..moveTo(size.width * 0.08, size.height * 0.28)
+          ..cubicTo(
+            size.width * 0.28,
+            size.height * 0.08,
+            size.width * 0.64,
+            size.height * 0.44,
+            size.width * 0.94,
+            size.height * 0.18,
+          );
+    canvas.drawPath(curve, curvePaint);
+
+    final Paint accentPaint = Paint()..color = const Color(0x80D49A32);
+    canvas.drawCircle(
+      Offset(size.width * 0.82, size.height * 0.2),
+      5,
+      accentPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
