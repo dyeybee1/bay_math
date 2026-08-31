@@ -2,22 +2,23 @@ import 'package:flutter/material.dart';
 
 import '../../../../app/constants/app_radius.dart';
 import '../../../../app/constants/app_spacing.dart';
+import '../../../../app/theme/adult_workspace_colors.dart';
 
 /// Semantic presentation roles for the adult Teacher/Administrator Auth flow.
 ///
 /// These colors are intentionally scoped to Auth so refining the official
 /// BayMath identity here cannot unexpectedly recolor Student or dashboard UI.
 abstract final class AuthPalette {
-  static const Color canvas = Color(0xFFF2F6F9);
-  static const Color ink = Color(0xFF112B40);
-  static const Color navy = Color(0xFF173D5A);
-  static const Color primary = Color(0xFF1559D6);
-  static const Color primaryMuted = Color(0xFF4B73A0);
-  static const Color softBlue = Color(0xFFE9F2F8);
-  static const Color paleBlue = Color(0xFFF0F6FA);
-  static const Color gold = Color(0xFFDCA329);
-  static const Color fieldFill = Color(0xFFF8FAFC);
-  static const Color outline = Color(0xFFC8D5DE);
+  static const Color canvas = AdultWorkspaceColors.canvas;
+  static const Color ink = AdultWorkspaceColors.ink;
+  static const Color navy = AdultWorkspaceColors.navy;
+  static const Color primary = AdultWorkspaceColors.primary;
+  static const Color primaryMuted = AdultWorkspaceColors.primaryMuted;
+  static const Color softBlue = AdultWorkspaceColors.softBlue;
+  static const Color paleBlue = AdultWorkspaceColors.paleBlue;
+  static const Color gold = AdultWorkspaceColors.gold;
+  static const Color fieldFill = AdultWorkspaceColors.fieldFill;
+  static const Color outline = AdultWorkspaceColors.outline;
 }
 
 class AuthShellSurface extends StatelessWidget {
