@@ -3,9 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../../app/constants/app_spacing.dart';
+import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/endless_question.dart';
 import '../../../core/models/quiz_attempt_choice.dart';
@@ -15,71 +15,12 @@ import '../../../core/providers/student_profile_provider.dart';
 import '../../../core/providers/student_session_provider.dart';
 import '../../../core/providers/supabase_providers.dart';
 import '../../../core/repositories/endless_quiz_repository.dart';
-import '../../../core/widgets/widgets.dart';
 import '../data/endless_quiz_leaderboard_providers.dart';
+import 'endless_quiz_design.dart';
 import 'endless_quiz_results_screen.dart';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HUD colour palette — identical hex values to EndlessQuizLandingScreen
-// and EndlessQuizFullLeaderboardScreen for cross-screen visual consistency.
-// ─────────────────────────────────────────────────────────────────────────────
-const Color _kNavyDeep    = Color(0xFF0B173F);
-const Color _kNavyMid     = Color(0xFF1E3A8C);
-
-const Color _kBlueGlow    = Color(0xFF3B8CFF);
-const Color _kYellow      = Color(0xFFFFC839);
-
-const Color _kTextPrimary = Color(0xFFEAF0FF);
-const Color _kTextMuted   = Color(0xFF9FB4E8);
-const Color _kPanelBg     = Color(0x0FFFFFFF);
-const Color _kPanelBorder = Color(0x1FFFFFFF);
-const Color _kCorrectGreen = Color(0xFF33D69F);
-const Color _kIncorrectRed = Color(0xFFFF5E5E);
-
-
-/// Option badge fills: A=glow-blue, B=green, C=yellow, D=purple
-const List<Color> _kChoiceColors = <Color>[
-  Color(0xFF3B8CFF),
-  Color(0xFF33D69F),
-  Color(0xFFFFC839),
-  Color(0xFF9B7CF0),
-];
-
-/// Text colour on each badge (dark where bg is light)
-const List<Color> _kChoiceTextColors = <Color>[
-  Colors.white,
-  Color(0xFF08291A),
-  Color(0xFF6B4C00),
-  Colors.white,
-];
 
 const Duration _kFeedbackDelay = Duration(milliseconds: 1750);
 
-/// Phase 7 (Endless Quiz) — one freshly-random practice question at a
-/// time, straight through: pick a choice, see correct/incorrect
-/// immediately, then auto-advance after [_kFeedbackDelay]. A wrong answer
-/// resets the current streak but never ends the session; the only way out
-/// is the always-visible Done/Quit button.
-///
-/// Deliberately a `ConsumerStatefulWidget` with plain local `State` for
-/// all of this screen's transient play state — same shape as
-/// `quiz_taking_screen.dart`'s `_QuizTakingScreenState` (see that class's
-/// own doc comment) — rather than a Riverpod `StateNotifier`. Unlike that
-/// screen, the "current question" here is not driven by a watched
-/// `FutureProvider`: there is no attempt/content row behind Endless Quiz
-/// to watch, every `fetchQuestion()` call is an independent, imperative
-/// step in a fetch → answer → delay → fetch chain, and a provider
-/// watch/invalidate cycle would just reintroduce a loading-flicker between
-/// questions that this imperative version avoids by only ever swapping
-/// `_currentQuestion` at the one point a replacement is actually ready
-/// (see `_loadNextQuestion` below).
-///
-/// Visual treatment matches the illustrated "adventure" reference used by
-/// the landing and results screens either side of this one: a full-bleed
-/// forest backdrop, a wooden signboard for the question prompt, and
-/// colored letter badges for each choice instead of plain radio dots.
-/// Every piece of state/business logic below is unchanged from before —
-/// only the `build`/presentational widgets were reworked.
 class EndlessQuizScreen extends ConsumerStatefulWidget {
   const EndlessQuizScreen({super.key});
 
@@ -88,49 +29,16 @@ class EndlessQuizScreen extends ConsumerStatefulWidget {
 }
 
 class _EndlessQuizScreenState extends ConsumerState<EndlessQuizScreen> {
-  /// Captured once, the first time this screen is entered — never
-  /// refreshed on subsequent question loads. This is `finalizeSession`'s
-  /// `startedAt`.
   late final DateTime _startedAt = DateTime.now();
 
   EndlessQuestion? _currentQuestion;
-
-  /// Set (and left set) whenever a question load or answer check fails —
-  /// paired with whether `_currentQuestion` is still null to decide
-  /// between a full-screen error (nothing to show yet) and an inline one
-  /// (a question is still on screen, just stuck mid-transition).
   AppFailure? _loadError;
-
-  /// The choice tapped for the CURRENT question, before/after the
-  /// `checkAnswer` round-trip. Only ever cleared together with
-  /// `_isAnswerCorrect`, at the single point in `_loadNextQuestion` where
-  /// a new question actually replaces this one — never independently, so
-  /// the two can't desync the way `quiz_taking_screen.dart` guards against
-  /// too.
   String? _selectedChoiceId;
-
-  /// Set once `checkAnswer` returns for `_selectedChoiceId`. Null means
-  /// "not yet answered this question".
   bool? _isAnswerCorrect;
-
-  /// True from the moment a choice is tapped until the NEXT question has
-  /// actually loaded — spans the `checkAnswer` round-trip, the feedback
-  /// delay, AND the following `fetchQuestion` round-trip, not just the
-  /// first of those. Disables further choice taps for the whole span (the
-  /// answered/locked choice list doesn't take taps anyway, but this also
-  /// covers the brief window before that view is showing yet) and is the
-  /// single flag `_loadNextQuestion` clears once a replacement question is
-  /// in hand.
   bool _isBusy = false;
-
   int _currentStreak = 0;
   int _bestStreakSession = 0;
   int _questionsAnswered = 0;
-
-  /// Debounce only for Done/Quit, per the already-settled call on this
-  /// (see `EndlessQuizRepository.finalizeSession`'s doc comment) — set the
-  /// instant the button is tapped, never reset on success (the screen
-  /// navigates away), reset on failure so the student can retry.
   bool _isFinalizing = false;
 
   @override
@@ -184,10 +92,6 @@ class _EndlessQuizScreenState extends ConsumerState<EndlessQuizScreen> {
       );
       if (repo == null) throw const SessionExpiredFailure();
 
-      // The single authoritative correctness check — never computed
-      // locally. Returns only a boolean (see the repository's own doc
-      // comment on why there's no per-choice detail to show here, unlike
-      // `quiz_taking_screen.dart`'s `_AnsweredChoiceList`).
       final bool isCorrect = await repo.checkAnswer(
         questionId: question.questionId,
         choiceId: choiceId,
@@ -197,14 +101,7 @@ class _EndlessQuizScreenState extends ConsumerState<EndlessQuizScreen> {
       setState(() {
         _isAnswerCorrect = isCorrect;
         _questionsAnswered += 1;
-        // Increments on every answer, correct or incorrect; resets to 0
-        // on incorrect without ending the session.
         _currentStreak = isCorrect ? _currentStreak + 1 : 0;
-        // Recomputed every time `_currentStreak` changes — including right
-        // before a reset — so the peak reached just before a wrong answer
-        // is never lost. In practice the peak is already captured here on
-        // the correct answer that set it; a following reset to 0 can only
-        // leave this unchanged (`max(best, 0) == best`), never lower it.
         _bestStreakSession = math.max(_bestStreakSession, _currentStreak);
       });
 
@@ -217,10 +114,6 @@ class _EndlessQuizScreenState extends ConsumerState<EndlessQuizScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(failure.message)));
-      // checkAnswer itself never returned here (`_isAnswerCorrect` is
-      // still null), so it's safe to clear the selection and let the
-      // student try again — unlike the mid-transition failure path in
-      // `_loadNextQuestion`, there's no answered feedback to preserve.
       setState(() {
         _selectedChoiceId = null;
         _isBusy = false;
@@ -248,27 +141,16 @@ class _EndlessQuizScreenState extends ConsumerState<EndlessQuizScreen> {
       );
       if (!mounted) return;
 
-      // `EndlessQuizLandingScreen` stays mounted underneath this whole
-      // time — it was reached via `Navigator.push` (not `pushReplacement`)
-      // from the home screen, and this screen's own navigation below is a
-      // `pushReplacement` onto Results, not a pop back to Landing. Without
-      // this, popping from Results back to Landing later would show the
-      // leaderboard/rank data exactly as it was before this session was
-      // played, since nothing would ever mark
-      // `endlessQuizLeaderboardProvider` for refetch. Invalidating here
-      // (rather than waiting for Landing's own `build` to run again) lets
-      // Riverpod refetch it now, in the background, while the student is
-      // still looking at Results — by the time they pop back, the data is
-      // already fresh instead of only starting to load at that point.
       ref.invalidate(endlessQuizLeaderboardProvider);
 
       unawaited(
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(
-            builder: (_) => EndlessQuizResultsScreen(
-              questionsAnswered: _questionsAnswered,
-              bestStreakSession: _bestStreakSession,
-            ),
+            builder:
+                (_) => EndlessQuizResultsScreen(
+                  questionsAnswered: _questionsAnswered,
+                  bestStreakSession: _bestStreakSession,
+                ),
           ),
         ),
       );
@@ -283,510 +165,437 @@ class _EndlessQuizScreenState extends ConsumerState<EndlessQuizScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final GradeLevel? grade = ref.watch(ownStudentGradeLevelProvider).value;
     return Scaffold(
-      backgroundColor: _kNavyDeep,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(-0.7, -0.75),
-            radius: 1.5,
-            colors: <Color>[_kNavyMid, _kNavyDeep],
-          ),
-        ),
+      backgroundColor: EndlessQuizColors.pageBackground,
+      body: EndlessQuizBackdrop(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                const _QuizHeader(),
-                const SizedBox(height: 18),
-                _StreakStatsCard(
-                  currentStreak: _currentStreak,
-                  bestStreakSession: _bestStreakSession,
-                  questionsAnswered: _questionsAnswered,
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        _buildQuestionArea(),
-                        const SizedBox(height: 16),
-                        _DoneButton(
-                          isLoading: _isFinalizing,
-                          onPressed: _isFinalizing ? null : _finishSession,
-                        ),
-                      ],
-                    ),
+          child: Column(
+            children: <Widget>[
+              EndlessQuizHeader(
+                title: 'Endless Quiz',
+                subtitle:
+                    grade == null
+                        ? 'Practice run'
+                        : '${grade.label} · Practice run',
+                onBack: () => Navigator.maybePop(context),
+              ),
+              Expanded(
+                child: EndlessPageBody(
+                  maxWidth: 1240,
+                  child: _GameplayCanvas(
+                    question: _currentQuestion,
+                    loadError: _loadError,
+                    selectedChoiceId: _selectedChoiceId,
+                    answerIsCorrect: _isAnswerCorrect,
+                    isBusy: _isBusy,
+                    isFinalizing: _isFinalizing,
+                    currentStreak: _currentStreak,
+                    bestStreak: _bestStreakSession,
+                    answered: _questionsAnswered,
+                    onSelect: _selectChoice,
+                    onRetry: _loadNextQuestion,
+                    onFinish: _finishSession,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
-
-  Widget _buildQuestionArea() {
-    final EndlessQuestion? question = _currentQuestion;
-
-    // Nothing to show yet at all (first load, or every retry of it, still
-    // in flight or failed) — full-screen loading/error in place of the
-    // question area.
-    if (question == null) {
-      if (_loadError != null) {
-        return AppErrorState(
-          message: _loadError!.message,
-          onRetry: _loadNextQuestion,
-        );
-      }
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 40),
-        child: AppLoadingIndicator(),
-      );
-    }
-
-    // Local copies so Dart can promote both together — same reasoning as
-    // `quiz_taking_screen.dart`'s `justAnswered` guard.
-    final String? selectedChoiceId = _selectedChoiceId;
-    final bool? isAnswerCorrect = _isAnswerCorrect;
-    final bool justAnswered = selectedChoiceId != null && isAnswerCorrect != null;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _WoodenQuestionBoard(promptText: question.promptText),
-        const SizedBox(height: AppSpacing.md),
-        if (justAnswered)
-          _EndlessAnsweredChoiceList(
-            question: question,
-            selectedChoiceId: selectedChoiceId,
-            isCorrect: isAnswerCorrect,
-          )
-        else
-          _EndlessSelectableChoiceList(
-            question: question,
-            selectedChoiceId: selectedChoiceId,
-            isEnabled: !_isBusy,
-            onSelect: _selectChoice,
-          ),
-        if (justAnswered) ...<Widget>[
-          const SizedBox(height: AppSpacing.md),
-          _EndlessFeedbackBanner(isCorrect: isAnswerCorrect),
-        ],
-        // A failure here only happens mid-transition (fetching the NEXT
-        // question after the delay above) — the answered feedback for the
-        // question the student can still see stays exactly as it was;
-        // this just adds a way to retry the stuck fetch without losing it.
-        if (_loadError != null) ...<Widget>[
-          const SizedBox(height: AppSpacing.md),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    _loadError!.message,
-                    style: const TextStyle(color: _kIncorrectRed),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                TextButton(
-                  onPressed: _loadNextQuestion,
-                  child: const Text('Retry'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ],
-    );
-  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Top bar
-// ─────────────────────────────────────────────────────────────────────────────
+class _GameplayCanvas extends StatelessWidget {
+  const _GameplayCanvas({
+    required this.question,
+    required this.loadError,
+    required this.selectedChoiceId,
+    required this.answerIsCorrect,
+    required this.isBusy,
+    required this.isFinalizing,
+    required this.currentStreak,
+    required this.bestStreak,
+    required this.answered,
+    required this.onSelect,
+    required this.onRetry,
+    required this.onFinish,
+  });
 
-class _QuizHeader extends ConsumerWidget {
-  const _QuizHeader();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final GradeLevel? grade = ref.watch(ownStudentGradeLevelProvider).value;
-    final String sub = grade != null ? '${grade.label} · Endless Quiz' : 'Endless Quiz';
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: <Widget>[
-        _CircleNavBtn(
-          icon: Icons.arrow_back_rounded,
-          onTap: () => Navigator.maybePop(context),
-        ),
-        const SizedBox(width: 14),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text('Endless Quiz',
-                style: GoogleFonts.baloo2(fontSize: 20, fontWeight: FontWeight.w800, color: _kTextPrimary)),
-            Text(sub,
-                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: _kTextMuted)),
-          ],
-        ),
-        const Spacer(),
-        Image.asset('assets/images/baymath_logo.png', width: 34, height: 34, fit: BoxFit.contain),
-        const SizedBox(width: 8),
-        Text('BayMath',
-            style: GoogleFonts.baloo2(fontSize: 18, fontWeight: FontWeight.w800, color: _kTextPrimary)),
-      ],
-    );
-  }
-}
-
-class _CircleNavBtn extends StatelessWidget {
-  const _CircleNavBtn({required this.icon, required this.onTap});
-  final IconData icon;
-  final VoidCallback onTap;
+  final EndlessQuestion? question;
+  final AppFailure? loadError;
+  final String? selectedChoiceId;
+  final bool? answerIsCorrect;
+  final bool isBusy;
+  final bool isFinalizing;
+  final int currentStreak;
+  final int bestStreak;
+  final int answered;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onRetry;
+  final VoidCallback onFinish;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(50),
-      onTap: onTap,
-      child: Container(
-        width: 42,
-        height: 42,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _kPanelBg,
-          border: Border.all(color: _kPanelBorder),
+    return EndlessPaper(
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(23),
+        child: Column(
+          children: <Widget>[
+            _RunRibbon(
+              currentStreak: currentStreak,
+              bestStreak: bestStreak,
+              answered: answered,
+            ),
+            Expanded(
+              child: _QuestionViewport(
+                question: question,
+                loadError: loadError,
+                selectedChoiceId: selectedChoiceId,
+                answerIsCorrect: answerIsCorrect,
+                isBusy: isBusy,
+                currentStreak: currentStreak,
+                onSelect: onSelect,
+                onRetry: onRetry,
+              ),
+            ),
+            _SessionFooter(
+              isFinalizing: isFinalizing,
+              onFinish: isFinalizing ? null : onFinish,
+            ),
+          ],
         ),
-        child: Icon(icon, color: _kTextMuted, size: 20),
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Stats row — three equal glass-panel chips
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _StreakStatsCard extends StatelessWidget {
-  const _StreakStatsCard({
+class _RunRibbon extends StatelessWidget {
+  const _RunRibbon({
     required this.currentStreak,
-    required this.bestStreakSession,
-    required this.questionsAnswered,
+    required this.bestStreak,
+    required this.answered,
   });
 
   final int currentStreak;
-  final int bestStreakSession;
-  final int questionsAnswered;
+  final int bestStreak;
+  final int answered;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final bool active = currentStreak > 0;
+    final Color accent = active ? EndlessQuizColors.streak : AppColors.primary;
+    final Color container =
+        active ? EndlessQuizColors.streakSoft : AppColors.primaryContainer;
+    return Semantics(
+      container: true,
+      label:
+          'Current streak $currentStreak. Best this session $bestStreak. Questions answered $answered.',
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg,
+          vertical: 12,
+        ),
+        decoration: BoxDecoration(
+          color: container.withValues(alpha: 0.58),
+          border: const Border(
+            bottom: BorderSide(color: AppColors.outlineVariant),
+          ),
+        ),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: active ? EndlessQuizColors.streak : AppColors.primary,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Icon(
+                Icons.local_fire_department_rounded,
+                color: Colors.white,
+                size: 25,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  active ? 'STREAK IN MOTION' : 'START A STREAK',
+                  style: endlessBodyStyle(
+                    9,
+                    weight: FontWeight.w800,
+                    color: accent,
+                  ).copyWith(letterSpacing: 0.9),
+                ),
+                Text(
+                  '$currentStreak correct in a row',
+                  style: endlessTitleStyle(
+                    18,
+                    color:
+                        active
+                            ? EndlessQuizColors.streak
+                            : AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            _InlineRunStat(label: 'BEST THIS RUN', value: '$bestStreak'),
+            Container(
+              width: 1,
+              height: 34,
+              margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              color: AppColors.outlineVariant,
+            ),
+            _InlineRunStat(label: 'ANSWERED', value: '$answered'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InlineRunStat extends StatelessWidget {
+  const _InlineRunStat({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: <Widget>[
-        Expanded(
-          child: _StatChip(
-            icon: Icons.local_fire_department_rounded,
-            iconBg: const Color(0x33FF7A00),
-            iconColor: const Color(0xFFFF8C42),
-            value: '$currentStreak',
-            label: 'STREAK',
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatChip(
-            icon: Icons.emoji_events_rounded,
-            iconBg: const Color(0x33FFC839),
-            iconColor: _kYellow,
-            iconGlow: const Color(0x50FFC839),
-            value: '$bestStreakSession',
-            label: 'BEST',
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatChip(
-            icon: Icons.checklist_rounded,
-            iconBg: const Color(0x333B8CFF),
-            iconColor: _kBlueGlow,
-            value: '$questionsAnswered',
-            label: 'ANSWERED',
-          ),
+        Text(value, style: endlessTitleStyle(18, color: AppColors.primary)),
+        Text(
+          label,
+          style: endlessBodyStyle(
+            8.5,
+            weight: FontWeight.w800,
+            color: AppColors.textSecondary,
+          ).copyWith(letterSpacing: 0.6),
         ),
       ],
     );
   }
 }
 
-class _StatChip extends StatelessWidget {
-  const _StatChip({
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.value,
-    required this.label,
-    this.iconGlow,
+class _QuestionViewport extends StatelessWidget {
+  const _QuestionViewport({
+    required this.question,
+    required this.loadError,
+    required this.selectedChoiceId,
+    required this.answerIsCorrect,
+    required this.isBusy,
+    required this.currentStreak,
+    required this.onSelect,
+    required this.onRetry,
   });
 
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String value;
-  final String label;
-  final Color? iconGlow;
+  final EndlessQuestion? question;
+  final AppFailure? loadError;
+  final String? selectedChoiceId;
+  final bool? answerIsCorrect;
+  final bool isBusy;
+  final int currentStreak;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: _kPanelBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _kPanelBorder),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: iconBg,
-              boxShadow: iconGlow != null
-                  ? <BoxShadow>[BoxShadow(color: iconGlow!, blurRadius: 10, offset: Offset.zero)]
-                  : null,
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
+    if (question == null) {
+      if (loadError != null) {
+        return EndlessStatePanel(
+          title: 'Could not load a question',
+          message: loadError!.message,
+          icon: Icons.cloud_off_outlined,
+          actionLabel: 'Try again',
+          onAction: onRetry,
+        );
+      }
+      return const EndlessStatePanel(
+        title: 'Finding your next question',
+        message: 'Your practice run will continue in a moment.',
+        icon: Icons.search_rounded,
+        loading: true,
+      );
+    }
+
+    final bool answered = selectedChoiceId != null && answerIsCorrect != null;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool short = constraints.maxHeight < 390;
+        return SingleChildScrollView(
+          padding: EdgeInsets.symmetric(
+            horizontal: short ? AppSpacing.md : AppSpacing.lg,
+            vertical: short ? AppSpacing.sm : AppSpacing.md,
           ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text(value,
-                  style: GoogleFonts.baloo2(
-                      fontSize: 22, fontWeight: FontWeight.w800, color: _kTextPrimary)),
-              Text(label,
-                  style: GoogleFonts.inter(
-                          fontSize: 10, fontWeight: FontWeight.w600, color: _kTextMuted)
-                      .copyWith(letterSpacing: 1.2)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Question card (replaces wooden board — class name kept for call-site compat)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _WoodenQuestionBoard extends StatelessWidget {
-  const _WoodenQuestionBoard({required this.promptText});
-  final String promptText;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 90),
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: <Color>[Color(0x293B8CFF), Color(0x0DFFFFFF)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _kBlueGlow),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(color: Color(0x303B8CFF), blurRadius: 28, offset: Offset.zero),
-        ],
-      ),
-      child: Text(
-        promptText,
-        textAlign: TextAlign.center,
-        style: GoogleFonts.baloo2(
-            fontSize: 19, fontWeight: FontWeight.w700, color: _kTextPrimary),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Done / quit button
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _DoneButton extends StatelessWidget {
-  const _DoneButton({required this.isLoading, required this.onPressed});
-  final bool isLoading;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onPressed,
-      child: Container(
-        height: 52,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: _kPanelBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _kPanelBorder),
-        ),
-        child: isLoading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.4, color: _kTextMuted),
-              )
-            : Semantics(
-                label: 'End Endless Quiz session',
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    const Icon(Icons.stop_circle_outlined, color: _kTextMuted, size: 20),
-                    const SizedBox(width: 8),
-                    Text('Done',
-                        style: GoogleFonts.inter(
-                            fontSize: 15, fontWeight: FontWeight.w600, color: _kTextMuted)),
-                  ],
+              Row(
+                children: <Widget>[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryContainer.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'NEXT STEP IN YOUR RUN',
+                      style: endlessBodyStyle(
+                        9,
+                        weight: FontWeight.w800,
+                        color: AppColors.primary,
+                      ).copyWith(letterSpacing: 0.7),
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    answered
+                        ? 'Moving to the next question…'
+                        : 'Choose one answer',
+                    style: endlessBodyStyle(11, color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+              SizedBox(height: short ? AppSpacing.sm : AppSpacing.md),
+              Semantics(
+                label: 'Question. ${question!.promptText}',
+                child: Text(
+                  question!.promptText,
+                  style: endlessTitleStyle(
+                    short ? 18 : 21,
+                    weight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
-      ),
+              SizedBox(height: short ? AppSpacing.md : AppSpacing.lg),
+              _ChoiceGrid(
+                choices: question!.choices,
+                selectedChoiceId: selectedChoiceId,
+                answerIsCorrect: answerIsCorrect,
+                enabled: !isBusy,
+                onSelect: onSelect,
+              ),
+              if (answered) ...<Widget>[
+                const SizedBox(height: AppSpacing.md),
+                _AnswerFeedback(
+                  isCorrect: answerIsCorrect!,
+                  currentStreak: currentStreak,
+                ),
+              ],
+              if (loadError != null) ...<Widget>[
+                const SizedBox(height: AppSpacing.md),
+                _InlineLoadError(message: loadError!.message, onRetry: onRetry),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Choice lists — 2 × 2 grid layout
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Builds a 2-column grid of tappable option cards before an answer is
-/// submitted. Selected state (blue tint + glow border) is shown for the
-/// tapped choice while the server round-trip is in flight.
-class _EndlessSelectableChoiceList extends StatelessWidget {
-  const _EndlessSelectableChoiceList({
-    required this.question,
+class _ChoiceGrid extends StatelessWidget {
+  const _ChoiceGrid({
+    required this.choices,
     required this.selectedChoiceId,
-    required this.isEnabled,
+    required this.answerIsCorrect,
+    required this.enabled,
     required this.onSelect,
   });
 
-  final EndlessQuestion question;
+  final List<QuizAttemptChoice> choices;
   final String? selectedChoiceId;
-  final bool isEnabled;
+  final bool? answerIsCorrect;
+  final bool enabled;
   final ValueChanged<String> onSelect;
 
   @override
   Widget build(BuildContext context) {
-    final List<QuizAttemptChoice> ch = question.choices;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool twoColumns = constraints.maxWidth >= 720;
+        final List<Widget> cards = List<Widget>.generate(choices.length, (
+          int index,
+        ) {
+          final QuizAttemptChoice choice = choices[index];
+          final bool selected = choice.choiceId == selectedChoiceId;
+          final _ChoiceVisualState state =
+              answerIsCorrect == null
+                  ? selected
+                      ? _ChoiceVisualState.selected
+                      : _ChoiceVisualState.neutral
+                  : selected
+                  ? answerIsCorrect!
+                      ? _ChoiceVisualState.correct
+                      : _ChoiceVisualState.incorrect
+                  : _ChoiceVisualState.locked;
+          return _AnswerChoice(
+            index: index,
+            text: choice.choiceText,
+            state: state,
+            onTap:
+                enabled && answerIsCorrect == null
+                    ? () => onSelect(choice.choiceId)
+                    : null,
+          );
+        });
 
-    _ChoiceCard card(int i) => _ChoiceCard(
-          index: i,
-          text: ch[i].choiceText,
-          state: selectedChoiceId == ch[i].choiceId
-              ? _ChoiceVisualState.selected
-              : _ChoiceVisualState.neutral,
-          onTap: isEnabled ? () => onSelect(ch[i].choiceId) : null,
-        );
-
-    return Column(
-      children: <Widget>[
-        IntrinsicHeight(
-          child: Row(children: <Widget>[
-            if (ch.isNotEmpty) Expanded(child: card(0)),
-            if (ch.length > 1) ...<Widget>[const SizedBox(width: 12), Expanded(child: card(1))],
-          ]),
-        ),
-        if (ch.length > 2) ...<Widget>[
-          const SizedBox(height: 12),
-          IntrinsicHeight(
-            child: Row(children: <Widget>[
-              Expanded(child: card(2)),
-              if (ch.length > 3) ...<Widget>[
-                const SizedBox(width: 12),
-                Expanded(child: card(3)),
+        if (!twoColumns) {
+          return Column(
+            children: <Widget>[
+              for (int i = 0; i < cards.length; i++) ...<Widget>[
+                cards[i],
+                if (i != cards.length - 1)
+                  const SizedBox(height: AppSpacing.sm),
               ],
-            ]),
-          ),
-        ],
-      ],
+            ],
+          );
+        }
+
+        final List<Widget> rows = <Widget>[];
+        for (int i = 0; i < cards.length; i += 2) {
+          rows.add(
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(child: cards[i]),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child:
+                        i + 1 < cards.length
+                            ? cards[i + 1]
+                            : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ),
+          );
+          if (i + 2 < cards.length) {
+            rows.add(const SizedBox(height: AppSpacing.sm));
+          }
+        }
+        return Column(children: rows);
+      },
     );
   }
 }
 
-/// Choice list after `checkAnswer` returns. Only the selected choice is
-/// marked correct/incorrect; others stay neutral — the Endless Quiz RPC
-/// returns only `{ is_correct }`, not per-choice correctness.
-class _EndlessAnsweredChoiceList extends StatelessWidget {
-  const _EndlessAnsweredChoiceList({
-    required this.question,
-    required this.selectedChoiceId,
-    required this.isCorrect,
-  });
+enum _ChoiceVisualState { neutral, selected, correct, incorrect, locked }
 
-  final EndlessQuestion question;
-  final String selectedChoiceId;
-  final bool isCorrect;
-
-  @override
-  Widget build(BuildContext context) {
-    final List<QuizAttemptChoice> ch = question.choices;
-
-    _ChoiceCard card(int i) => _ChoiceCard(
-          index: i,
-          text: ch[i].choiceText,
-          state: ch[i].choiceId != selectedChoiceId
-              ? _ChoiceVisualState.neutral
-              : (isCorrect ? _ChoiceVisualState.correct : _ChoiceVisualState.incorrect),
-          onTap: null,
-        );
-
-    return Column(
-      children: <Widget>[
-        IntrinsicHeight(
-          child: Row(children: <Widget>[
-            if (ch.isNotEmpty) Expanded(child: card(0)),
-            if (ch.length > 1) ...<Widget>[const SizedBox(width: 12), Expanded(child: card(1))],
-          ]),
-        ),
-        if (ch.length > 2) ...<Widget>[
-          const SizedBox(height: 12),
-          IntrinsicHeight(
-            child: Row(children: <Widget>[
-              Expanded(child: card(2)),
-              if (ch.length > 3) ...<Widget>[
-                const SizedBox(width: 12),
-                Expanded(child: card(3)),
-              ],
-            ]),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-enum _ChoiceVisualState { neutral, selected, correct, incorrect }
-
-class _ChoiceCard extends StatelessWidget {
-  const _ChoiceCard({
+class _AnswerChoice extends StatelessWidget {
+  const _AnswerChoice({
     required this.index,
     required this.text,
     required this.state,
@@ -798,83 +607,178 @@ class _ChoiceCard extends StatelessWidget {
   final _ChoiceVisualState state;
   final VoidCallback? onTap;
 
-  String get _letter => String.fromCharCode(65 + index);
-  Color get _badgeFill => _kChoiceColors[index % _kChoiceColors.length];
-  Color get _badgeText => _kChoiceTextColors[index % _kChoiceTextColors.length];
+  @override
+  Widget build(BuildContext context) {
+    final String letter = String.fromCharCode(65 + index);
+    final ({Color fill, Color accent, String status, IconData? icon}) visual =
+        switch (state) {
+          _ChoiceVisualState.selected => (
+            fill: AppColors.primaryContainer.withValues(alpha: 0.7),
+            accent: AppColors.primary,
+            status: 'Selected, checking',
+            icon: Icons.hourglass_top_rounded,
+          ),
+          _ChoiceVisualState.correct => (
+            fill: EndlessQuizColors.successSoft,
+            accent: EndlessQuizColors.success,
+            status: 'Correct answer',
+            icon: Icons.check_circle_rounded,
+          ),
+          _ChoiceVisualState.incorrect => (
+            fill: EndlessQuizColors.dangerSoft,
+            accent: EndlessQuizColors.danger,
+            status: 'Incorrect answer',
+            icon: Icons.cancel_rounded,
+          ),
+          _ChoiceVisualState.locked => (
+            fill: AppColors.surfaceContainerHighest.withValues(alpha: 0.66),
+            accent: AppColors.textSecondary,
+            status: 'Not selected',
+            icon: null,
+          ),
+          _ChoiceVisualState.neutral => (
+            fill: Colors.white,
+            accent: AppColors.primary,
+            status: 'Answer choice',
+            icon: null,
+          ),
+        };
+    return Semantics(
+      button: onTap != null,
+      enabled: onTap != null,
+      selected: state == _ChoiceVisualState.selected,
+      label: 'Choice $letter. $text. ${visual.status}.',
+      child: Material(
+        color: visual.fill,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 68),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color:
+                    state == _ChoiceVisualState.neutral ||
+                            state == _ChoiceVisualState.locked
+                        ? AppColors.outlineVariant
+                        : visual.accent.withValues(alpha: 0.68),
+                width: state == _ChoiceVisualState.neutral ? 1 : 1.4,
+              ),
+            ),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 38,
+                  height: 38,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: visual.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    letter,
+                    style: endlessTitleStyle(
+                      14,
+                      weight: FontWeight.w800,
+                      color: visual.accent,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: endlessBodyStyle(
+                      14,
+                      weight: FontWeight.w600,
+                      color:
+                          state == _ChoiceVisualState.locked
+                              ? AppColors.textSecondary
+                              : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                if (visual.icon != null) ...<Widget>[
+                  const SizedBox(width: AppSpacing.sm),
+                  Icon(visual.icon, color: visual.accent, size: 22),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AnswerFeedback extends StatelessWidget {
+  const _AnswerFeedback({required this.isCorrect, required this.currentStreak});
+
+  final bool isCorrect;
+  final int currentStreak;
 
   @override
   Widget build(BuildContext context) {
-    final Color fill;
-    final Color border;
-    final List<BoxShadow> shadows;
-    final IconData? trailingIcon;
-
-    switch (state) {
-      case _ChoiceVisualState.selected:
-        fill = const Color(0x243B8CFF);
-        border = _kBlueGlow;
-        shadows = const <BoxShadow>[
-          BoxShadow(color: Color(0x403B8CFF), blurRadius: 18, offset: Offset.zero),
-        ];
-        trailingIcon = null;
-      case _ChoiceVisualState.correct:
-        fill = const Color(0x2233D69F);
-        border = _kCorrectGreen;
-        shadows = const <BoxShadow>[
-          BoxShadow(color: Color(0x4033D69F), blurRadius: 14, offset: Offset.zero),
-        ];
-        trailingIcon = Icons.check_circle_rounded;
-      case _ChoiceVisualState.incorrect:
-        fill = const Color(0x22FF5E5E);
-        border = _kIncorrectRed;
-        shadows = const <BoxShadow>[
-          BoxShadow(color: Color(0x40FF5E5E), blurRadius: 14, offset: Offset.zero),
-        ];
-        trailingIcon = Icons.cancel_rounded;
-      case _ChoiceVisualState.neutral:
-        fill = _kPanelBg;
-        border = _kPanelBorder;
-        shadows = const <BoxShadow>[];
-        trailingIcon = null;
-    }
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(18),
-      onTap: onTap,
+    final Color color =
+        isCorrect ? EndlessQuizColors.success : EndlessQuizColors.danger;
+    final Color container =
+        isCorrect
+            ? EndlessQuizColors.successSoft
+            : EndlessQuizColors.dangerSoft;
+    final String title =
+        isCorrect
+            ? 'Correct — keep the run going'
+            : 'Streak reset — next question';
+    final String detail =
+        isCorrect
+            ? 'Current streak: $currentStreak'
+            : 'The streak is back to 0. Start fresh on the next one.';
+    return Semantics(
+      liveRegion: true,
+      label: '$title. $detail',
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: 12,
+        ),
         decoration: BoxDecoration(
-          color: fill,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: border),
-          boxShadow: shadows,
+          color: container,
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           children: <Widget>[
-            // Letter badge
-            Container(
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: _badgeFill),
-              child: Text(
-                _letter,
-                style: GoogleFonts.inter(
-                    fontSize: 14, fontWeight: FontWeight.w700, color: _badgeText),
-              ),
+            Icon(
+              isCorrect ? Icons.check_circle_rounded : Icons.refresh_rounded,
+              color: color,
+              size: 24,
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: AppSpacing.sm),
             Expanded(
-              child: Text(
-                text,
-                style: GoogleFonts.inter(
-                    fontSize: 15, fontWeight: FontWeight.w600, color: _kTextPrimary),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    title,
+                    style: endlessBodyStyle(
+                      13.5,
+                      weight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  Text(
+                    detail,
+                    style: endlessBodyStyle(
+                      11.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
             ),
-            if (trailingIcon != null) ...<Widget>[
-              const SizedBox(width: 8),
-              Icon(trailingIcon, color: border, size: 22),
-            ],
+            Icon(Icons.arrow_forward_rounded, color: color, size: 20),
           ],
         ),
       ),
@@ -882,37 +786,32 @@ class _ChoiceCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Correctness feedback banner
-// ─────────────────────────────────────────────────────────────────────────────
+class _InlineLoadError extends StatelessWidget {
+  const _InlineLoadError({required this.message, required this.onRetry});
 
-class _EndlessFeedbackBanner extends StatelessWidget {
-  const _EndlessFeedbackBanner({required this.isCorrect});
-  final bool isCorrect;
+  final String message;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    final Color accent = isCorrect ? _kCorrectGreen : _kIncorrectRed;
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
-        color: isCorrect ? const Color(0x2233D69F) : const Color(0x22FF5E5E),
+        color: EndlessQuizColors.dangerSoft,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accent.withValues(alpha: 0.5)),
       ),
       child: Row(
         children: <Widget>[
-          Icon(
-            isCorrect ? Icons.check_circle_rounded : Icons.cancel_rounded,
-            color: accent,
-            size: 22,
-          ),
-          const SizedBox(width: 10),
-          Text(
-            isCorrect ? 'Correct!' : 'Not quite.',
-            style: GoogleFonts.inter(
-                fontSize: 15, fontWeight: FontWeight.w700, color: accent),
+          const Icon(Icons.cloud_off_outlined, color: EndlessQuizColors.danger),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: Text(message, style: endlessBodyStyle(12))),
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('Retry'),
           ),
         ],
       ),
@@ -920,3 +819,50 @@ class _EndlessFeedbackBanner extends StatelessWidget {
   }
 }
 
+class _SessionFooter extends StatelessWidget {
+  const _SessionFooter({required this.isFinalizing, required this.onFinish});
+
+  final bool isFinalizing;
+  final VoidCallback? onFinish;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFAFBFD),
+        border: Border(top: BorderSide(color: AppColors.outlineVariant)),
+      ),
+      child: Row(
+        children: <Widget>[
+          TextButton.icon(
+            onPressed: onFinish,
+            icon:
+                isFinalizing
+                    ? const SizedBox.square(
+                      dimension: 17,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    )
+                    : const Icon(Icons.stop_circle_outlined),
+            label: Text(isFinalizing ? 'Saving run…' : 'Finish this run'),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(48, 48),
+              foregroundColor: AppColors.error,
+              textStyle: endlessBodyStyle(13, weight: FontWeight.w700),
+            ),
+          ),
+          const Spacer(),
+          const Icon(Icons.bolt_rounded, color: AppColors.primary, size: 18),
+          const SizedBox(width: 5),
+          Text(
+            'Answers advance automatically',
+            style: endlessBodyStyle(11, color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}

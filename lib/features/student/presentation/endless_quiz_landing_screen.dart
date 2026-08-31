@@ -1,155 +1,93 @@
-import 'dart:math' as math;
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-import '../../../core/constants/avatar_catalog.dart';
+import '../../../app/constants/app_spacing.dart';
+import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/endless_quiz_leaderboard.dart';
+import '../../../core/models/student.dart';
 import '../../../core/providers/student_profile_provider.dart';
-import '../../../core/widgets/widgets.dart';
 import '../data/endless_quiz_leaderboard_providers.dart';
+import 'endless_quiz_design.dart';
 import 'endless_quiz_full_leaderboard_screen.dart';
+import 'endless_quiz_leaderboard_widgets.dart';
 import 'endless_quiz_screen.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Named colour palette — all hex values live here, never inline.
-// ─────────────────────────────────────────────────────────────────────────────
-abstract final class _C {
-  static const Color navyDeep     = Color(0xFF0B173F);
-  static const Color navyMid      = Color(0xFF1E3A8C);
-  static const Color navyDark     = Color(0xFF16307A);
-  static const Color bluePrimary  = Color(0xFF2F6FED);
-  static const Color blueGlow     = Color(0xFF3B8CFF);
-  static const Color yellowAccent = Color(0xFFFFC839);
-  static const Color yellowDark   = Color(0xFF6B4C00);
-  static const Color textPrimary  = Color(0xFFEAF0FF);
-  static const Color textMuted    = Color(0xFF9FB4E8);
-  static const Color silver       = Color(0xFFC7D0E0);
-  static const Color bronze       = Color(0xFFE0A972);
-  static const Color panelBg      = Color(0x0FFFFFFF); // 6 % white
-  static const Color panelBorder  = Color(0x1FFFFFFF); // 12 % white
-  static const Color divider      = Color(0x33FFFFFF); // 20 % white
-  static const Color xpTrack      = Color(0x1AFFFFFF); // 10 % white
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-String _initials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+'));
-  if (parts.isEmpty) return '?';
-  if (parts.length == 1) {
-    return parts[0].substring(0, math.min(2, parts[0].length)).toUpperCase();
-  }
-  return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-}
-
-int _level(int streak)       => (streak / 10).floor() + 1;
-double _xpFraction(int streak) => (streak % 10) / 10.0;
-
-TextStyle _baloo(double size, {FontWeight weight = FontWeight.w700, Color color = _C.textPrimary}) =>
-    GoogleFonts.baloo2(fontSize: size, fontWeight: weight, color: color);
-
-TextStyle _inter(double size, {FontWeight weight = FontWeight.w400, Color color = _C.textPrimary}) =>
-    GoogleFonts.inter(fontSize: size, fontWeight: weight, color: color);
-
-void _showHowItWorksDialog(BuildContext context) {
-  AppDialog.show<void>(
-    context,
-    title: 'How Endless Quiz Works',
-    type: AppDialogType.info,
-    icon: Icons.help_outline_rounded,
-    message: 'Answer questions back-to-back — there\'s no fixed end point, so keep going as long '
-        'as you can. Every correct answer extends your streak; a wrong answer ends the round. '
-        'Your best streak is saved and ranked on the leaderboard!',
-    actions: <Widget>[
-      AppButton(label: 'Got it', onPressed: () => Navigator.of(context).pop()),
-    ],
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Root screen
-// ─────────────────────────────────────────────────────────────────────────────
 class EndlessQuizLandingScreen extends ConsumerWidget {
   const EndlessQuizLandingScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final dataAsync = ref.watch(endlessQuizLeaderboardProvider);
-    // Own profile — used to render the signed-in student's avatar icon inside
-    // the podium. The leaderboard RPC only returns (rank, full_name,
-    // best_endless_streak) — no avatarId — so only the current student's own
-    // avatar can be looked up from the profile provider.
-    final ownProfile = ref.watch(ownStudentProfileProvider).value;
+    final AsyncValue<EndlessQuizLeaderboardData> dataAsync = ref.watch(
+      endlessQuizLeaderboardProvider,
+    );
+    final Student? profile = ref.watch(ownStudentProfileProvider).value;
 
     return Scaffold(
-      backgroundColor: _C.navyDeep,
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment(-0.7, -0.75),
-            radius: 1.5,
-            colors: <Color>[_C.navyMid, _C.navyDeep],
-          ),
-        ),
+      backgroundColor: EndlessQuizColors.pageBackground,
+      body: EndlessQuizBackdrop(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                // ── Top bar ────────────────────────────────────────────
-                _TopBar(onInfo: () => _showHowItWorksDialog(context)),
-                const SizedBox(height: 18),
-                // ── Two-panel body ─────────────────────────────────────
-                Expanded(
+          child: Column(
+            children: <Widget>[
+              EndlessQuizHeader(
+                title: 'Endless Quiz',
+                subtitle: 'A focused practice challenge',
+                onBack: () => Navigator.maybePop(context),
+                action: EndlessIconButton(
+                  tooltip: 'How Endless Quiz works',
+                  icon: Icons.info_outline_rounded,
+                  onPressed: () => _showHowItWorks(context),
+                ),
+              ),
+              Expanded(
+                child: EndlessPageBody(
                   child: dataAsync.when(
-                    loading: () => const Center(
-                      child: CircularProgressIndicator(color: _C.blueGlow),
-                    ),
-                    error: (e, _) => Center(
-                      child: AppErrorState(
-                        message: e is AppFailure ? e.message : 'Could not load leaderboard.',
-                        onRetry: () => ref.invalidate(endlessQuizLeaderboardProvider),
-                      ),
-                    ),
-                    data: (data) => Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        // Left panel — 38 %
-                        Expanded(
-                          flex: 38,
-                          child: _LeftPanel(
-                            myRank: data.myRank,
-                            onPlay: () => Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const EndlessQuizScreen(),
+                    loading:
+                        () => const EndlessStatePanel(
+                          title: 'Preparing your challenge',
+                          message:
+                              'Loading your best streak and grade rankings.',
+                          icon: Icons.bolt_rounded,
+                          loading: true,
+                        ),
+                    error:
+                        (Object error, StackTrace _) => EndlessStatePanel(
+                          title: 'Could not open Endless Quiz',
+                          message:
+                              error is AppFailure
+                                  ? error.message
+                                  : 'The challenge data could not be loaded right now.',
+                          icon: Icons.cloud_off_outlined,
+                          actionLabel: 'Try again',
+                          onAction:
+                              () => ref.invalidate(
+                                endlessQuizLeaderboardProvider,
                               ),
-                            ),
-                            onHowItWorks: () => _showHowItWorksDialog(context),
-                          ),
                         ),
-                        // Vertical divider
-                        Container(
-                          width: 1,
-                          margin: const EdgeInsets.symmetric(horizontal: 22),
-                          color: _C.divider,
+                    data:
+                        (EndlessQuizLeaderboardData data) => _LandingLayout(
+                          data: data,
+                          profile: profile,
+                          onPlay:
+                              () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const EndlessQuizScreen(),
+                                ),
+                              ),
+                          onHowItWorks: () => _showHowItWorks(context),
+                          onLeaderboard:
+                              () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder:
+                                      (_) =>
+                                          const EndlessQuizFullLeaderboardScreen(),
+                                ),
+                              ),
                         ),
-                        // Right panel — remaining width
-                        Expanded(
-                          flex: 62,
-                          child: _RightPanel(data: data, ownProfile: ownProfile),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -157,437 +95,173 @@ class EndlessQuizLandingScreen extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Top bar
-// ─────────────────────────────────────────────────────────────────────────────
-class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onInfo});
-  final VoidCallback onInfo;
+class _LandingLayout extends StatelessWidget {
+  const _LandingLayout({
+    required this.data,
+    required this.profile,
+    required this.onPlay,
+    required this.onHowItWorks,
+    required this.onLeaderboard,
+  });
+
+  final EndlessQuizLeaderboardData data;
+  final Student? profile;
+  final VoidCallback onPlay;
+  final VoidCallback onHowItWorks;
+  final VoidCallback onLeaderboard;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        _CircleNavBtn(
-          icon: Icons.arrow_back_rounded,
-          onTap: () => Navigator.maybePop(context),
-        ),
-        const SizedBox(width: 10),
-        // Logo — the login-screen hero image (baymath_logo_for_login.png)
-        Image.asset('assets/images/baymath_logo_for_login.png', width: 36, height: 36, fit: BoxFit.contain),
-        const SizedBox(width: 8),
-        Text('BayMath', style: _baloo(19, weight: FontWeight.w800)),
-        const Spacer(),
-        _CircleNavBtn(icon: Icons.info_outline_rounded, onTap: onInfo),
-      ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool short = constraints.maxHeight < 500;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(
+              flex: 59,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(right: AppSpacing.md, bottom: 4),
+                child: _ChallengeHero(
+                  myRank: data.myRank,
+                  short: short,
+                  onPlay: onPlay,
+                  onHowItWorks: onHowItWorks,
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 41,
+              child: _LeaderboardPreview(
+                entries: data.topEntries,
+                myRank: data.myRank,
+                currentStudentName: profile?.fullName,
+                short: short,
+                onViewAll: onLeaderboard,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
-class _CircleNavBtn extends StatelessWidget {
-  const _CircleNavBtn({required this.icon, required this.onTap});
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(50),
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: _C.panelBg,
-          border: Border.all(color: _C.panelBorder),
-        ),
-        child: Icon(icon, color: _C.textMuted, size: 18),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Left panel
-// ─────────────────────────────────────────────────────────────────────────────
-class _LeftPanel extends StatelessWidget {
-  const _LeftPanel({
+class _ChallengeHero extends StatelessWidget {
+  const _ChallengeHero({
     required this.myRank,
+    required this.short,
     required this.onPlay,
     required this.onHowItWorks,
   });
 
   final LeaderboardEntry myRank;
+  final bool short;
   final VoidCallback onPlay;
   final VoidCallback onHowItWorks;
-
-  @override
-  Widget build(BuildContext context) {
-    // Level is derived from bestEndlessStreak (10 streak = 1 level).
-    // NOTE: There is no XP/level table in the database — this is a
-    // purely visual progression indicator based on streak milestones.
-    // A real XP system would require a dedicated database column/table.
-    final int streak = myRank.bestEndlessStreak;
-    final int lv     = _level(streak);
-    final double xp  = _xpFraction(streak);
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        // 1 ── Level + XP bar
-        _LevelXpRow(level: lv, xpFraction: xp, streak: streak),
-        const SizedBox(height: 18),
-        // 2 ── Title
-        _GlowText(
-          'Endless Quiz',
-          style: _baloo(34, weight: FontWeight.w800),
-          glowColor: _C.blueGlow,
-        ),
-        const SizedBox(height: 8),
-        // 3 ── Subtitle
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 300),
-          child: Text(
-            'How far can you go? Answer as many as you can, for as long as you can.',
-            style: _inter(13.5, color: _C.textMuted),
-          ),
-        ),
-        const SizedBox(height: 26),
-        // 4 ── Buttons
-        _ButtonRow(onPlay: onPlay, onHowItWorks: onHowItWorks),
-        const SizedBox(height: 24),
-        // 5 ── Stats chips
-        _StatsRow(streak: streak, rank: myRank.rank),
-      ],
-    );
-  }
-}
-
-// Level + XP row ──────────────────────────────────────────────────────────────
-class _LevelXpRow extends StatelessWidget {
-  const _LevelXpRow({required this.level, required this.xpFraction, required this.streak});
-  final int level;
-  final double xpFraction;
-  final int streak;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        // LVL badge
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: _C.yellowAccent,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: const <BoxShadow>[
-              BoxShadow(color: Color(0x60FFC839), blurRadius: 10, offset: Offset(0, 2)),
-            ],
-          ),
-          child: Text(
-            'LVL $level',
-            style: _inter(12, weight: FontWeight.w700, color: _C.yellowDark),
-          ),
-        ),
-        const SizedBox(width: 10),
-        // XP bar
-        Expanded(child: _XpBar(fraction: xpFraction)),
-      ],
-    );
-  }
-}
-
-class _XpBar extends StatelessWidget {
-  const _XpBar({required this.fraction});
-  final double fraction;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final double w = constraints.maxWidth;
-        return Stack(
-          children: <Widget>[
-            // Track
-            Container(
-              height: 7,
-              decoration: BoxDecoration(
-                color: _C.xpTrack,
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-            // Fill
-            Container(
-              height: 7,
-              width: w * fraction.clamp(0.04, 1.0),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(99),
-                gradient: const LinearGradient(
-                  colors: <Color>[_C.bluePrimary, _C.yellowAccent],
-                ),
-                boxShadow: const <BoxShadow>[
-                  BoxShadow(color: Color(0x703B8CFF), blurRadius: 8, offset: Offset(0, 0)),
-                ],
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// Glow text ───────────────────────────────────────────────────────────────────
-class _GlowText extends StatelessWidget {
-  const _GlowText(this.text, {required this.style, required this.glowColor});
-  final String text;
-  final TextStyle style;
-  final Color glowColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: <Widget>[
-        // Glow layer (blurred copy behind)
-        Text(
-          text,
-          style: style.copyWith(
-            foreground: Paint()
-              ..color = glowColor.withAlpha(120)
-              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
-          ),
-        ),
-        // Actual text
-        Text(text, style: style),
-      ],
-    );
-  }
-}
-
-// Button row ──────────────────────────────────────────────────────────────────
-class _ButtonRow extends StatelessWidget {
-  const _ButtonRow({required this.onPlay, required this.onHowItWorks});
-  final VoidCallback onPlay;
-  final VoidCallback onHowItWorks;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        // Play Now — primary CTA
-        _PlayNowBtn(onPressed: onPlay),
-        const SizedBox(width: 12),
-        // How It Works — ghost
-        _GhostBtn(onPressed: onHowItWorks),
-      ],
-    );
-  }
-}
-
-class _PlayNowBtn extends StatelessWidget {
-  const _PlayNowBtn({required this.onPressed});
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onPressed,
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 13),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[_C.blueGlow, _C.bluePrimary],
-            ),
-            boxShadow: const <BoxShadow>[
-              // Glow
-              BoxShadow(color: Color(0x803B8CFF), blurRadius: 22, offset: Offset(0, 0)),
-              // 3-D depth press
-              BoxShadow(color: _C.navyDark, blurRadius: 0, offset: Offset(0, 4)),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 22),
-              const SizedBox(width: 6),
-              Text('Play Now', style: _inter(15, weight: FontWeight.w700)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GhostBtn extends StatelessWidget {
-  const _GhostBtn({required this.onPressed});
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onPressed,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            color: _C.panelBg,
-            border: Border.all(color: _C.panelBorder),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(Icons.help_outline_rounded, color: _C.textMuted, size: 18),
-              const SizedBox(width: 6),
-              Text('How It Works', style: _inter(15, weight: FontWeight.w600, color: _C.textMuted)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Stats row ───────────────────────────────────────────────────────────────────
-class _StatsRow extends StatelessWidget {
-  const _StatsRow({required this.streak, required this.rank});
-  final int streak;
-  final int rank;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        _StatChip(value: '$streak', label: 'BEST STREAK'),
-        const SizedBox(width: 10),
-        _StatChip(value: '#$rank', label: 'RANK'),
-      ],
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  const _StatChip({required this.value, required this.label});
-  final String value;
-  final String label;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      constraints: BoxConstraints(minHeight: short ? 430 : 520),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: _C.panelBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _C.panelBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            value,
-            style: _baloo(26, weight: FontWeight.w800, color: _C.yellowAccent),
-          ),
-          Text(
-            label,
-            style: _inter(10, weight: FontWeight.w600, color: _C.textMuted),
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFFE7F0FB), Color(0xFFFFF5E8)],
+        ),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.14)),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AppColors.onPrimaryContainer.withValues(alpha: 0.1),
+            blurRadius: 28,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Right panel — leaderboard
-// ─────────────────────────────────────────────────────────────────────────────
-class _RightPanel extends StatelessWidget {
-  const _RightPanel({required this.data, this.ownProfile});
-  final EndlessQuizLeaderboardData data;
-  final dynamic ownProfile; // Student? — typed as dynamic to avoid coupling
-
-  @override
-  Widget build(BuildContext context) {
-    final List<LeaderboardEntry> top3   = data.topEntries.take(3).toList();
-    final List<LeaderboardEntry> rest   = data.topEntries.skip(3).toList();
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-        child: Container(
-          decoration: BoxDecoration(
-            color: _C.panelBg,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _C.panelBorder),
+      child: Stack(
+        children: <Widget>[
+          Positioned(
+            right: -50,
+            top: -55,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer.withValues(alpha: 0.68),
+                shape: BoxShape.circle,
+              ),
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // Card header
-              _LeaderboardHeader(
-                onViewFull: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const EndlessQuizFullLeaderboardScreen(),
+          Positioned(
+            right: 38,
+            top: short ? 34 : 50,
+            child: _StreakEmblem(streak: myRank.bestEndlessStreak),
+          ),
+          Padding(
+            padding: EdgeInsets.all(short ? AppSpacing.lg : AppSpacing.xl),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.78),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'PRACTICE WITHOUT A FINISH LINE',
+                    style: endlessBodyStyle(
+                      9.5,
+                      weight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ).copyWith(letterSpacing: 0.9),
                   ),
                 ),
-              ),
-              Container(height: 1, color: _C.divider),
-              // Podium (top 3) — fixed height
-              _Podium(entries: top3, ownProfile: ownProfile),
-              Container(height: 1, color: _C.divider),
-              // Remaining ranks — fills leftover space and scrolls only if overflow
-              Expanded(
-                child: _RankList(entries: rest),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Card header ─────────────────────────────────────────────────────────────────
-class _LeaderboardHeader extends StatelessWidget {
-  const _LeaderboardHeader({required this.onViewFull});
-  final VoidCallback onViewFull;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      child: Row(
-        children: <Widget>[
-          const Text('🏆', style: TextStyle(fontSize: 20)),
-          const SizedBox(width: 8),
-          Text('Leaderboard', style: _baloo(18, weight: FontWeight.w700)),
-          const Spacer(),
-          GestureDetector(
-            onTap: onViewFull,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  'View Full Leaderboard',
-                  style: _inter(12, weight: FontWeight.w600, color: _C.blueGlow),
+                SizedBox(height: short ? 14 : 22),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 470),
+                  child: Text(
+                    'One question.\nThen one more.',
+                    style: endlessTitleStyle(short ? 34 : 43),
+                  ),
                 ),
-                const SizedBox(width: 3),
-                const Icon(Icons.arrow_forward_rounded, size: 14, color: _C.blueGlow),
+                const SizedBox(height: AppSpacing.sm),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 500),
+                  child: Text(
+                    'Build a run of correct answers, learn from every reset, and keep moving at your own pace.',
+                    style: endlessBodyStyle(
+                      short ? 13 : 14,
+                      color: AppColors.textSecondary,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+                SizedBox(height: short ? 16 : 24),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: <Widget>[
+                    EndlessPrimaryButton(
+                      label: 'Start a run',
+                      icon: Icons.play_arrow_rounded,
+                      onPressed: onPlay,
+                    ),
+                    EndlessSecondaryButton(
+                      label: 'How it works',
+                      icon: Icons.lightbulb_outline_rounded,
+                      onPressed: onHowItWorks,
+                    ),
+                  ],
+                ),
+                SizedBox(height: short ? AppSpacing.md : AppSpacing.xl),
+                _ChallengeRuleStrip(rank: myRank.rank),
               ],
             ),
           ),
@@ -597,222 +271,393 @@ class _LeaderboardHeader extends StatelessWidget {
   }
 }
 
-// Podium (top 3) ──────────────────────────────────────────────────────────────
-class _Podium extends StatelessWidget {
-  const _Podium({required this.entries, this.ownProfile});
-  final List<LeaderboardEntry> entries;
-  /// Student? — own profile fetched by the parent so we can render the
-  /// signed-in student's real avatar icon when they appear in the podium.
-  /// The leaderboard RPC does NOT return avatarId, so only the own entry
-  /// can have the real avatar; all other entries fall back to initials.
-  final dynamic ownProfile;
+class _StreakEmblem extends StatelessWidget {
+  const _StreakEmblem({required this.streak});
+
+  final int streak;
 
   @override
   Widget build(BuildContext context) {
-    if (entries.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(
-          child: Text('No entries yet — be the first!',
-              style: TextStyle(color: _C.textMuted)),
+    return Semantics(
+      label: 'Personal best streak $streak',
+      child: Container(
+        width: 118,
+        height: 118,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.88),
+          shape: BoxShape.circle,
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: EndlessQuizColors.streak.withValues(alpha: 0.18),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
-      );
-    }
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            const Icon(
+              Icons.local_fire_department_rounded,
+              color: EndlessQuizColors.streak,
+              size: 31,
+            ),
+            Text(
+              '$streak',
+              style: endlessTitleStyle(26, color: EndlessQuizColors.streak),
+            ),
+            Text(
+              'PERSONAL BEST',
+              style: endlessBodyStyle(
+                8,
+                weight: FontWeight.w800,
+                color: AppColors.textSecondary,
+              ).copyWith(letterSpacing: 0.6),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-    // Rearrange: 2nd | 1st | 3rd (podium order)
-    final LeaderboardEntry? first  = entries.isNotEmpty  ? entries[0] : null;
-    final LeaderboardEntry? second = entries.length > 1  ? entries[1] : null;
-    final LeaderboardEntry? third  = entries.length > 2  ? entries[2] : null;
+class _ChallengeRuleStrip extends StatelessWidget {
+  const _ChallengeRuleStrip({required this.rank});
 
-    // The tie note: SQL RANK() gives the same number to tied students, so
-    // 1,2,2 is correct — not a bug. The next distinct rank after two rank-2s
-    // would be 4, skipping 3. This is intentional and documented in the RPC.
+  final int rank;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label:
+          'Each correct answer extends your streak. A mistake resets it. Grade rank $rank.',
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.78),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 46,
+              height: 46,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.secondaryContainer,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Icon(
+                Icons.trending_up_rounded,
+                color: AppColors.secondary,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Keep the streak moving',
+                    style: endlessBodyStyle(12.5, weight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Correct answers add to it. A mistake resets it.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: endlessBodyStyle(
+                      10.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Container(width: 1, height: 34, color: AppColors.outlineVariant),
+            const SizedBox(width: AppSpacing.md),
+            Column(
+              children: <Widget>[
+                Text(
+                  '#$rank',
+                  style: endlessTitleStyle(18, color: AppColors.primary),
+                ),
+                Text(
+                  'GRADE RANK',
+                  style: endlessBodyStyle(
+                    8,
+                    weight: FontWeight.w800,
+                    color: AppColors.textSecondary,
+                  ).copyWith(letterSpacing: 0.5),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LeaderboardPreview extends StatelessWidget {
+  const _LeaderboardPreview({
+    required this.entries,
+    required this.myRank,
+    required this.currentStudentName,
+    required this.short,
+    required this.onViewAll,
+  });
+
+  final List<LeaderboardEntry> entries;
+  final LeaderboardEntry myRank;
+  final String? currentStudentName;
+  final bool short;
+  final VoidCallback onViewAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<LeaderboardEntry> top = entries.take(3).toList();
+    final List<LeaderboardEntry> rest =
+        entries.skip(3).take(short ? 2 : 3).toList();
+    final bool studentVisible = entries
+        .take(short ? 5 : 6)
+        .any((LeaderboardEntry entry) => entry.fullName == currentStudentName);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
+      padding: const EdgeInsets.only(left: AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (second != null) _PodiumAvatar(entry: second, avatarSize: 56, ownProfile: ownProfile),
-          if (second != null) const SizedBox(width: 20),
-          if (first  != null) _PodiumAvatar(entry: first,  avatarSize: 72, ownProfile: ownProfile),
-          if (third  != null) const SizedBox(width: 20),
-          if (third  != null) _PodiumAvatar(entry: third,  avatarSize: 56, ownProfile: ownProfile),
+          Row(
+            children: <Widget>[
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: EndlessQuizColors.streakSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.emoji_events_rounded,
+                  color: EndlessQuizColors.streak,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text('Streak leaders', style: endlessTitleStyle(18)),
+                    Text(
+                      'Top practice runs in your grade',
+                      style: endlessBodyStyle(
+                        11,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: onViewAll,
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                child: const Text('See all'),
+              ),
+            ],
+          ),
+          SizedBox(height: short ? AppSpacing.sm : AppSpacing.md),
+          Expanded(
+            child:
+                entries.isEmpty
+                    ? const EndlessStatePanel(
+                      title: 'No rankings yet',
+                      message: 'The first completed run will begin the board.',
+                      icon: Icons.flag_outlined,
+                    )
+                    : SingleChildScrollView(
+                      child: Column(
+                        children: <Widget>[
+                          Container(
+                            padding: EdgeInsets.fromLTRB(
+                              AppSpacing.md,
+                              short ? AppSpacing.sm : AppSpacing.md,
+                              AppSpacing.md,
+                              AppSpacing.md,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.72),
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: EndlessTopThree(
+                              entries: top,
+                              currentStudentName: currentStudentName,
+                            ),
+                          ),
+                          SizedBox(
+                            height: short ? AppSpacing.xs : AppSpacing.sm,
+                          ),
+                          for (final LeaderboardEntry entry
+                              in rest) ...<Widget>[
+                            EndlessLeaderboardRow(
+                              entry: entry,
+                              compact: true,
+                              isCurrentStudent:
+                                  entry.fullName == currentStudentName,
+                            ),
+                            const Divider(
+                              height: 1,
+                              color: AppColors.outlineVariant,
+                            ),
+                          ],
+                          if (!studentVisible) ...<Widget>[
+                            const SizedBox(height: AppSpacing.sm),
+                            EndlessLeaderboardRow(
+                              entry: myRank,
+                              compact: true,
+                              isCurrentStudent: true,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _PodiumAvatar extends StatelessWidget {
-  const _PodiumAvatar({required this.entry, required this.avatarSize, this.ownProfile});
-  final LeaderboardEntry entry;
-  final double avatarSize;
-  /// Student? — only provided when this is the signed-in student's entry,
-  /// so the real avatar icon can be shown instead of initials.
-  final dynamic ownProfile;
-
-  static const List<Color> _fills = <Color>[
-    _C.yellowAccent, // 1st
-    _C.silver,       // 2nd
-    _C.bronze,       // 3rd
-  ];
-  static const List<Color> _glows = <Color>[
-    Color(0x80FFC839),
-    Color(0x40C7D0E0),
-    Color(0x40E0A972),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final int r      = (entry.rank - 1).clamp(0, 2);
-    final Color fill = _fills[r];
-    final Color glow = _glows[r];
-    final bool isFirst = entry.rank == 1;
-
-    // Determine whether this entry belongs to the signed-in student.
-    // If so, show their avatar icon; otherwise show name initials.
-    final bool isOwnEntry =
-        ownProfile != null && (ownProfile as dynamic).fullName == entry.fullName;
-    final dynamic avatar = isOwnEntry
-        ? AvatarCatalog.byId((ownProfile as dynamic).avatarId as String?)
-        : null;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Stack(
-          clipBehavior: Clip.none,
-          children: <Widget>[
-            Container(
-              width: avatarSize,
-              height: avatarSize,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: avatar != null ? (avatar as AvatarOption).background : fill,
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: glow,
-                    blurRadius: isFirst ? 22 : 10,
-                    offset: Offset.zero,
+Future<void> _showHowItWorks(BuildContext context) async {
+  await showDialog<void>(
+    context: context,
+    builder:
+        (BuildContext dialogContext) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(AppSpacing.lg),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 610),
+            child: EndlessPaper(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryContainer,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.lightbulb_outline_rounded,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Text(
+                          'How a run works',
+                          style: endlessTitleStyle(21),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  const _HowStep(
+                    icon: Icons.touch_app_rounded,
+                    title: 'Answer once',
+                    description:
+                        'Your choice is checked immediately and recorded only once.',
+                  ),
+                  const _HowStep(
+                    icon: Icons.local_fire_department_rounded,
+                    title: 'Grow the streak',
+                    description:
+                        'Each correct answer adds one to your current streak.',
+                    streak: true,
+                  ),
+                  const _HowStep(
+                    icon: Icons.refresh_rounded,
+                    title: 'Reset, then continue',
+                    description:
+                        'A mistake resets the streak to zero. The run keeps going with a new question.',
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  EndlessPrimaryButton(
+                    label: 'Ready to practice',
+                    icon: Icons.check_rounded,
+                    expand: true,
+                    onPressed: () => Navigator.of(dialogContext).pop(),
                   ),
                 ],
               ),
-              child: avatar != null
-                  ? Icon(
-                      (avatar as AvatarOption).icon,
-                      color: Colors.white,
-                      size: avatarSize * 0.45,
-                    )
-                  : Text(
-                      _initials(entry.fullName),
-                      style: _baloo(
-                        avatarSize * 0.30,
-                        weight: FontWeight.w800,
-                        color: isFirst ? _C.yellowDark : _C.navyDeep,
-                      ),
-                    ),
             ),
-            // Rank medal badge at bottom-center
-            Positioned(
-              bottom: -6,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Container(
-                  width: 20,
-                  height: 20,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _C.navyDeep,
-                    border: Border.all(color: fill, width: 1.5),
-                  ),
-                  child: Text(
-                    '${entry.rank}',
-                    style: _inter(10, weight: FontWeight.w700, color: fill),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
-        const SizedBox(height: 14),
-        Text(
-          entry.fullName.split(' ').first,
-          style: _inter(12, weight: FontWeight.w700),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Text(
-          'Streak ${entry.bestEndlessStreak}',
-          style: _inter(11, color: _C.textMuted),
-        ),
-      ],
-    );
-  }
+  );
 }
 
-// Rank list (4+) ──────────────────────────────────────────────────────────────
-class _RankList extends StatelessWidget {
-  const _RankList({required this.entries});
-  final List<LeaderboardEntry> entries;
+class _HowStep extends StatelessWidget {
+  const _HowStep({
+    required this.icon,
+    required this.title,
+    required this.description,
+    this.streak = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final bool streak;
 
   @override
   Widget build(BuildContext context) {
-    if (entries.isEmpty) return const SizedBox.shrink();
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      itemCount: entries.length,
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-        return Container(
-          padding: const EdgeInsets.symmetric(vertical: 11),
-          decoration: BoxDecoration(
-            border: index == 0
-                ? null
-                : const Border(top: BorderSide(color: _C.divider, width: 0.8)),
+    final Color color = streak ? EndlessQuizColors.streak : AppColors.primary;
+    final Color container =
+        streak ? EndlessQuizColors.streakSoft : AppColors.primaryContainer;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: container,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: color, size: 22),
           ),
-          child: Row(
-            children: <Widget>[
-              // Rank badge
-              Container(
-                width: 26,
-                height: 26,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _C.panelBg,
-                  border: Border.all(color: _C.panelBorder),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: endlessBodyStyle(14, weight: FontWeight.w700),
                 ),
-                child: Text(
-                  '${entry.rank}',
-                  style: _inter(11, weight: FontWeight.w700, color: _C.textMuted),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: endlessBodyStyle(12, color: AppColors.textSecondary),
                 ),
-              ),
-              const SizedBox(width: 10),
-              // Name
-              Expanded(
-                child: Text(
-                  entry.fullName,
-                  style: _inter(13, weight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              // Streak
-              Text(
-                'Streak ${entry.bestEndlessStreak}',
-                style: _inter(12, color: _C.textMuted),
-              ),
-            ],
+              ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }
