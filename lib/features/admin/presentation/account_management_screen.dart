@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/constants/app_radius.dart';
 import '../../../app/constants/app_spacing.dart';
+import '../../../app/theme/adult_workspace_colors.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/profile.dart';
 import '../../../core/models/section.dart';
@@ -198,6 +200,22 @@ class _AccountManagementScreenState
     super.dispose();
   }
 
+  bool get _hasFilters =>
+      _searchQuery.trim().isNotEmpty ||
+      _roleFilter != null ||
+      _gradeFilter != null ||
+      _sectionFilter != null;
+
+  void _clearFilters() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _roleFilter = null;
+      _gradeFilter = null;
+      _sectionFilter = null;
+    });
+  }
+
   List<_AccountRow> _buildRows(
     List<Profile> teachers,
     List<StudentWithSection> students,
@@ -382,19 +400,20 @@ class _AccountManagementScreenState
   Future<void> _editTeacher(Profile teacher) async {
     await showDialog<void>(
       context: context,
-      builder: (_) => _EditTeacherDialog(
-        teacher: teacher,
-        onPendingChanged: (bool pending) {
-          if (!mounted) return;
-          setState(() {
-            if (pending) {
-              _pendingIds.add(teacher.id);
-            } else {
-              _pendingIds.remove(teacher.id);
-            }
-          });
-        },
-      ),
+      builder:
+          (_) => _EditTeacherDialog(
+            teacher: teacher,
+            onPendingChanged: (bool pending) {
+              if (!mounted) return;
+              setState(() {
+                if (pending) {
+                  _pendingIds.add(teacher.id);
+                } else {
+                  _pendingIds.remove(teacher.id);
+                }
+              });
+            },
+          ),
     );
   }
 
@@ -512,53 +531,79 @@ class _AccountManagementScreenState
     final AsyncValue<Map<String, List<_TeacherSectionSummary>>>
     teacherSectionsAsync = ref.watch(_teacherSectionAssignmentsProvider);
 
-    return AppPageContainer(
-      scrollable: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          const AppSectionHeader(
-            title: 'Accounts',
-            subtitle: 'Archive or restore Teacher and Student accounts.',
-          ),
-          _FilterBar(
-            searchController: _searchController,
-            onSearchChanged:
-                (String value) => setState(() => _searchQuery = value),
-            roleFilter: _roleFilter,
-            onRoleChanged:
-                (_AccountRole? value) => setState(() => _roleFilter = value),
-            gradeFilter: _gradeFilter,
-            onGradeChanged:
-                (GradeLevel? value) => setState(() {
-                  _gradeFilter = value;
-                  // A previously-picked section may not belong to the newly
-                  // selected grade anymore — clear it rather than silently
-                  // keeping an invisible, no-longer-offered filter applied.
-                  _sectionFilter = null;
-                }),
-            sectionOptions:
-                (teachersAsync.value != null &&
-                        studentsAsync.value != null &&
-                        teacherSectionsAsync.value != null)
-                    ? _sectionFilterOptions(
-                      _buildRows(
-                        teachersAsync.value!,
-                        studentsAsync.value!,
-                        teacherSectionsAsync.value!,
-                      ),
-                    )
-                    : const <Section>[],
-            sectionFilter: _sectionFilter,
-            onSectionChanged:
-                (String? value) => setState(() => _sectionFilter = value),
-            statusFilter: _statusFilter,
-            onStatusChanged:
-                (_StatusFilter value) => setState(() => _statusFilter = value),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          _buildBody(teachersAsync, studentsAsync, teacherSectionsAsync),
-        ],
+    final bool dataReady =
+        teachersAsync.value != null &&
+        studentsAsync.value != null &&
+        teacherSectionsAsync.value != null;
+    final List<_AccountRow> allRows =
+        dataReady
+            ? _buildRows(
+              teachersAsync.value!,
+              studentsAsync.value!,
+              teacherSectionsAsync.value!,
+            )
+            : const <_AccountRow>[];
+
+    return ColoredBox(
+      key: const Key('admin_accounts_screen'),
+      color: AdultWorkspaceColors.canvas,
+      child: AppPageContainer(
+        scrollable: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const _AccountsPageHeader(),
+            if (dataReady) ...<Widget>[
+              const SizedBox(height: AppSpacing.lg),
+              _AccountOverview(rows: allRows),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            _FilterBar(
+              searchController: _searchController,
+              onSearchChanged:
+                  (String value) => setState(() => _searchQuery = value),
+              roleFilter: _roleFilter,
+              onRoleChanged:
+                  (_AccountRole? value) => setState(() => _roleFilter = value),
+              gradeFilter: _gradeFilter,
+              onGradeChanged:
+                  (GradeLevel? value) => setState(() {
+                    _gradeFilter = value;
+                    // A previously-picked section may not belong to the newly
+                    // selected grade anymore — clear it rather than silently
+                    // keeping an invisible, no-longer-offered filter applied.
+                    _sectionFilter = null;
+                  }),
+              sectionOptions:
+                  dataReady
+                      ? _sectionFilterOptions(allRows)
+                      : const <Section>[],
+              sectionFilter: _sectionFilter,
+              onSectionChanged:
+                  (String? value) => setState(() => _sectionFilter = value),
+              statusFilter: _statusFilter,
+              onStatusChanged:
+                  (_StatusFilter value) =>
+                      setState(() => _statusFilter = value),
+              activeCount:
+                  dataReady
+                      ? allRows
+                          .where((_AccountRow row) => !row.isArchived)
+                          .length
+                      : null,
+              archivedCount:
+                  dataReady
+                      ? allRows
+                          .where((_AccountRow row) => row.isArchived)
+                          .length
+                      : null,
+              canClear: _hasFilters,
+              onClear: _clearFilters,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _buildBody(teachersAsync, studentsAsync, teacherSectionsAsync),
+          ],
+        ),
       ),
     );
   }
@@ -571,36 +616,41 @@ class _AccountManagementScreenState
     if (teachersAsync.isLoading ||
         studentsAsync.isLoading ||
         teacherSectionsAsync.isLoading) {
-      return const Padding(
-        padding: EdgeInsets.all(AppSpacing.xl),
-        child: AppLoadingIndicator(),
+      return const _AccountsStateSurface(
+        child: AppLoadingIndicator(message: 'Loading account directory'),
       );
     }
     if (teachersAsync.hasError) {
-      return AppErrorState(
-        message:
-            teachersAsync.error is AppFailure
-                ? (teachersAsync.error! as AppFailure).message
-                : 'Could not load teachers.',
-        onRetry: () => ref.invalidate(adminAccountsTeachersProvider),
+      return _AccountsStateSurface(
+        child: AppErrorState(
+          message:
+              teachersAsync.error is AppFailure
+                  ? (teachersAsync.error! as AppFailure).message
+                  : 'Could not load teachers.',
+          onRetry: () => ref.invalidate(adminAccountsTeachersProvider),
+        ),
       );
     }
     if (studentsAsync.hasError) {
-      return AppErrorState(
-        message:
-            studentsAsync.error is AppFailure
-                ? (studentsAsync.error! as AppFailure).message
-                : 'Could not load students.',
-        onRetry: () => ref.invalidate(adminAccountsStudentsProvider),
+      return _AccountsStateSurface(
+        child: AppErrorState(
+          message:
+              studentsAsync.error is AppFailure
+                  ? (studentsAsync.error! as AppFailure).message
+                  : 'Could not load students.',
+          onRetry: () => ref.invalidate(adminAccountsStudentsProvider),
+        ),
       );
     }
     if (teacherSectionsAsync.hasError) {
-      return AppErrorState(
-        message:
-            teacherSectionsAsync.error is AppFailure
-                ? (teacherSectionsAsync.error! as AppFailure).message
-                : 'Could not load section assignments.',
-        onRetry: () => ref.invalidate(_teacherSectionAssignmentsProvider),
+      return _AccountsStateSurface(
+        child: AppErrorState(
+          message:
+              teacherSectionsAsync.error is AppFailure
+                  ? (teacherSectionsAsync.error! as AppFailure).message
+                  : 'Could not load section assignments.',
+          onRetry: () => ref.invalidate(_teacherSectionAssignmentsProvider),
+        ),
       );
     }
 
@@ -612,35 +662,47 @@ class _AccountManagementScreenState
     final List<_AccountRow> rows = _applyFilters(allRows);
 
     if (rows.isEmpty) {
-      return AppEmptyState(
-        icon: Icons.manage_accounts_outlined,
-        title:
-            allRows.isEmpty
-                ? 'No accounts yet'
-                : 'No accounts match your filters',
-        description:
-            allRows.isEmpty
-                ? 'Teacher and Student accounts will appear here.'
-                : 'Try a different search term or filter.',
+      final bool directoryIsEmpty = allRows.isEmpty;
+      final bool statusIsEmpty = !directoryIsEmpty && !_hasFilters;
+      final String emptyTitle =
+          directoryIsEmpty
+              ? 'No accounts yet'
+              : statusIsEmpty
+              ? _statusFilter == _StatusFilter.active
+                  ? 'No active accounts yet'
+                  : 'No archived accounts yet'
+              : 'No accounts match your filters';
+      final String emptyDescription =
+          directoryIsEmpty
+              ? 'Teacher and Student accounts will appear here.'
+              : statusIsEmpty
+              ? _statusFilter == _StatusFilter.active
+                  ? 'Active teacher and student accounts will appear here.'
+                  : 'Accounts you archive will appear here for recovery.'
+              : 'Try a different search term or clear the filters.';
+      return _AccountsStateSurface(
+        child: AppEmptyState(
+          icon: Icons.manage_accounts_outlined,
+          title: emptyTitle,
+          description: emptyDescription,
+          actionLabel:
+              statusIsEmpty || directoryIsEmpty ? null : 'Clear filters',
+          onAction: statusIsEmpty || directoryIsEmpty ? null : _clearFilters,
+        ),
       );
     }
 
-    return Column(
-      children: <Widget>[
-        for (final _AccountRow row in rows)
-          _AccountRowCard(
-            row: row,
-            isPending: _pendingIds.contains(row.id),
-            onArchiveTeacher: (Profile t) => _archiveTeacher(t),
-            onRestoreTeacher: (Profile t) => _restoreTeacher(t),
-            onArchiveStudent: (Student s) => _archiveStudent(s),
-            onRestoreStudent:
-                (StudentWithSection sws) => _restoreStudent(sws),
-            onEditTeacher: (Profile t) => _editTeacher(t),
-            teachers: teachersAsync.value!,
-            students: studentsAsync.value!,
-          ),
-      ],
+    return _AccountDirectory(
+      rows: rows,
+      statusFilter: _statusFilter,
+      pendingIds: _pendingIds,
+      onArchiveTeacher: _archiveTeacher,
+      onRestoreTeacher: _restoreTeacher,
+      onArchiveStudent: _archiveStudent,
+      onRestoreStudent: _restoreStudent,
+      onEditTeacher: _editTeacher,
+      teachers: teachersAsync.value!,
+      students: studentsAsync.value!,
     );
   }
 }
@@ -665,8 +727,285 @@ class _AccountManagementScreenState
 /// outside closes it) cover the same "back out without saving" need, so
 /// no X button is rendered here — flagged as a deliberate deviation from
 /// the reference image description rather than an oversight.
+class _AccountsPageHeader extends StatelessWidget {
+  const _AccountsPageHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Widget heading = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              'ACCOUNT DIRECTORY',
+              style: TextStyle(
+                color: AdultWorkspaceColors.primaryMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Accounts',
+              key: const Key('accounts_page_title'),
+              style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                color: AdultWorkspaceColors.ink,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.6,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Manage teacher and student accounts across BayMath.',
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: AdultWorkspaceColors.secondaryText,
+                height: 1.45,
+              ),
+            ),
+          ],
+        );
+
+        if (constraints.maxWidth < 680) return heading;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(child: heading),
+            const SizedBox(width: AppSpacing.lg),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: AppSpacing.sm,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: AdultWorkspaceColors.border),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.admin_panel_settings_outlined,
+                    size: 17,
+                    color: AdultWorkspaceColors.primary,
+                  ),
+                  SizedBox(width: AppSpacing.sm),
+                  Text(
+                    'IDENTITY & ACCESS',
+                    style: TextStyle(
+                      color: AdultWorkspaceColors.navy,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.85,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _AccountOverview extends StatelessWidget {
+  const _AccountOverview({required this.rows});
+
+  final List<_AccountRow> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<_OverviewMetric> metrics = <_OverviewMetric>[
+      _OverviewMetric(
+        label: 'Total accounts',
+        value: rows.length,
+        icon: Icons.people_alt_outlined,
+      ),
+      _OverviewMetric(
+        label: 'Teachers',
+        value:
+            rows
+                .where((_AccountRow row) => row.role == _AccountRole.teacher)
+                .length,
+        icon: Icons.school_outlined,
+      ),
+      _OverviewMetric(
+        label: 'Students',
+        value:
+            rows
+                .where((_AccountRow row) => row.role == _AccountRole.student)
+                .length,
+        icon: Icons.person_outline_rounded,
+      ),
+      _OverviewMetric(
+        label: 'Archived',
+        value: rows.where((_AccountRow row) => row.isArchived).length,
+        icon: Icons.inventory_2_outlined,
+        muted: true,
+      ),
+    ];
+
+    return Container(
+      key: const Key('accounts_overview'),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: AppRadius.largeAll,
+        border: Border.all(color: AdultWorkspaceColors.border),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AdultWorkspaceColors.navy.withValues(alpha: 0.035),
+            offset: const Offset(0, 5),
+            blurRadius: 14,
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (constraints.maxWidth < 840) {
+            return Wrap(
+              children: <Widget>[
+                for (final _OverviewMetric metric in metrics)
+                  SizedBox(
+                    width: constraints.maxWidth / 2,
+                    child: _OverviewMetricTile(metric: metric),
+                  ),
+              ],
+            );
+          }
+          return IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (
+                  int index = 0;
+                  index < metrics.length;
+                  index++
+                ) ...<Widget>[
+                  Expanded(child: _OverviewMetricTile(metric: metrics[index])),
+                  if (index != metrics.length - 1)
+                    const VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: AdultWorkspaceColors.border,
+                    ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _OverviewMetric {
+  const _OverviewMetric({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.muted = false,
+  });
+
+  final String label;
+  final int value;
+  final IconData icon;
+  final bool muted;
+}
+
+class _OverviewMetricTile extends StatelessWidget {
+  const _OverviewMetricTile({required this.metric});
+
+  final _OverviewMetric metric;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: 14,
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color:
+                  metric.muted
+                      ? AdultWorkspaceColors.fieldFill
+                      : AdultWorkspaceColors.softBlue,
+              borderRadius: AppRadius.mediumAll,
+            ),
+            child: Icon(
+              metric.icon,
+              size: 18,
+              color:
+                  metric.muted
+                      ? AdultWorkspaceColors.secondaryText
+                      : AdultWorkspaceColors.navy,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  '${metric.value}',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: AdultWorkspaceColors.ink,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  metric.label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AdultWorkspaceColors.secondaryText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccountsStateSurface extends StatelessWidget {
+  const _AccountsStateSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 260),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: AppRadius.largeAll,
+        border: Border.all(color: AdultWorkspaceColors.border),
+      ),
+      child: child,
+    );
+  }
+}
+
 class _EditTeacherDialog extends ConsumerStatefulWidget {
-  const _EditTeacherDialog({required this.teacher, required this.onPendingChanged});
+  const _EditTeacherDialog({
+    required this.teacher,
+    required this.onPendingChanged,
+  });
 
   final Profile teacher;
 
@@ -680,10 +1019,12 @@ class _EditTeacherDialog extends ConsumerStatefulWidget {
 }
 
 class _EditTeacherDialogState extends ConsumerState<_EditTeacherDialog> {
-  late final TextEditingController _fullNameController =
-      TextEditingController(text: widget.teacher.fullName);
-  late final TextEditingController _emailController =
-      TextEditingController(text: widget.teacher.email);
+  late final TextEditingController _fullNameController = TextEditingController(
+    text: widget.teacher.fullName,
+  );
+  late final TextEditingController _emailController = TextEditingController(
+    text: widget.teacher.email,
+  );
 
   String? _fullNameError;
   String? _emailError;
@@ -707,9 +1048,10 @@ class _EditTeacherDialogState extends ConsumerState<_EditTeacherDialog> {
 
     setState(() {
       _fullNameError = fullName.isEmpty ? 'Full name is required.' : null;
-      _emailError = email.isEmpty
-          ? 'Email is required.'
-          : !email.contains('@')
+      _emailError =
+          email.isEmpty
+              ? 'Email is required.'
+              : !email.contains('@')
               ? 'Enter a valid email address.'
               : null;
     });
@@ -739,7 +1081,9 @@ class _EditTeacherDialogState extends ConsumerState<_EditTeacherDialog> {
 
     if (fullNameChanged) {
       try {
-        await ref.read(profilesRepositoryProvider).updateTeacherFullName(
+        await ref
+            .read(profilesRepositoryProvider)
+            .updateTeacherFullName(
               teacherId: widget.teacher.id,
               fullName: newFullName,
             );
@@ -751,7 +1095,9 @@ class _EditTeacherDialogState extends ConsumerState<_EditTeacherDialog> {
 
     if (emailChanged) {
       try {
-        await ref.read(profilesRepositoryProvider).updateTeacherEmail(
+        await ref
+            .read(profilesRepositoryProvider)
+            .updateTeacherEmail(
               teacherId: widget.teacher.id,
               newEmail: newEmail,
             );
@@ -780,9 +1126,9 @@ class _EditTeacherDialogState extends ConsumerState<_EditTeacherDialog> {
       // Keep the dialog open (with the admin's typed values intact) so
       // they can retry or adjust rather than losing their edits.
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(failure.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(failure.message)));
       return;
     }
 
@@ -849,6 +1195,10 @@ class _FilterBar extends StatelessWidget {
     required this.onSectionChanged,
     required this.statusFilter,
     required this.onStatusChanged,
+    required this.activeCount,
+    required this.archivedCount,
+    required this.canClear,
+    required this.onClear,
   });
 
   final TextEditingController searchController;
@@ -862,91 +1212,410 @@ class _FilterBar extends StatelessWidget {
   final ValueChanged<String?> onSectionChanged;
   final _StatusFilter statusFilter;
   final ValueChanged<_StatusFilter> onStatusChanged;
+  final int? activeCount;
+  final int? archivedCount;
+  final bool canClear;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        AppSearchBar(
-          controller: searchController,
-          hint: 'Search by name',
-          onChanged: onSearchChanged,
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            AppDropdown<_AccountRole>(
-              label: 'Role',
-              width: 160,
-              selected: roleFilter,
-              onChanged: onRoleChanged,
-              options: const <AppDropdownOption<_AccountRole>>[
-                AppDropdownOption(value: null, label: 'All Roles'),
-                AppDropdownOption(
-                  value: _AccountRole.teacher,
-                  label: 'Teacher',
-                ),
-                AppDropdownOption(
-                  value: _AccountRole.student,
-                  label: 'Student',
-                ),
-              ],
-            ),
-            AppDropdown<GradeLevel>(
-              label: 'Grade Level',
-              width: 180,
-              selected: gradeFilter,
-              onChanged: onGradeChanged,
-              options: <AppDropdownOption<GradeLevel>>[
-                const AppDropdownOption(value: null, label: 'All Grades'),
-                for (final GradeLevel g in GradeLevel.values)
-                  AppDropdownOption(value: g, label: g.label),
-              ],
-            ),
-            AppDropdown<String>(
-              label: 'Section',
-              width: 200,
-              selected: sectionFilter,
-              onChanged: onSectionChanged,
-              options: <AppDropdownOption<String>>[
-                const AppDropdownOption(value: null, label: 'All Sections'),
-                for (final Section s in sectionOptions)
+    return Container(
+      key: const Key('accounts_filter_toolbar'),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: AppRadius.largeAll,
+        border: Border.all(color: AdultWorkspaceColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final Widget search = AppSearchBar(
+                key: const Key('accounts_search_field'),
+                controller: searchController,
+                hint: 'Search accounts by name',
+                size: AppComponentSize.small,
+                onChanged: onSearchChanged,
+              );
+              final Widget status = _StatusSegmentedControl(
+                selected: statusFilter,
+                activeCount: activeCount,
+                archivedCount: archivedCount,
+                onChanged: onStatusChanged,
+              );
+              if (constraints.maxWidth < 700) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    search,
+                    const SizedBox(height: AppSpacing.sm),
+                    status,
+                  ],
+                );
+              }
+              return Row(
+                children: <Widget>[
+                  Expanded(child: search),
+                  const SizedBox(width: AppSpacing.md),
+                  status,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              AppDropdown<_AccountRole>(
+                key: const Key('accounts_role_filter'),
+                label: 'Role',
+                width: 150,
+                size: AppComponentSize.small,
+                selected: roleFilter,
+                onChanged: onRoleChanged,
+                options: const <AppDropdownOption<_AccountRole>>[
+                  AppDropdownOption(value: null, label: 'All Roles'),
                   AppDropdownOption(
-                    value: s.id,
-                    label: '${s.gradeLevel.label} — ${s.name}',
+                    value: _AccountRole.teacher,
+                    label: 'Teacher',
+                  ),
+                  AppDropdownOption(
+                    value: _AccountRole.student,
+                    label: 'Student',
+                  ),
+                ],
+              ),
+              AppDropdown<GradeLevel>(
+                key: const Key('accounts_grade_filter'),
+                label: 'Grade level',
+                width: 164,
+                size: AppComponentSize.small,
+                selected: gradeFilter,
+                onChanged: onGradeChanged,
+                options: <AppDropdownOption<GradeLevel>>[
+                  const AppDropdownOption(value: null, label: 'All Grades'),
+                  for (final GradeLevel g in GradeLevel.values)
+                    AppDropdownOption(value: g, label: g.label),
+                ],
+              ),
+              AppDropdown<String>(
+                key: const Key('accounts_section_filter'),
+                label: 'Section',
+                width: 190,
+                size: AppComponentSize.small,
+                selected: sectionFilter,
+                onChanged: onSectionChanged,
+                options: <AppDropdownOption<String>>[
+                  const AppDropdownOption(value: null, label: 'All Sections'),
+                  for (final Section s in sectionOptions)
+                    AppDropdownOption(
+                      value: s.id,
+                      label: '${s.gradeLevel.label} — ${s.name}',
+                    ),
+                ],
+              ),
+              TextButton.icon(
+                key: const Key('accounts_clear_filters'),
+                onPressed: canClear ? onClear : null,
+                icon: const Icon(Icons.filter_alt_off_outlined, size: 17),
+                label: const Text('Clear filters'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusSegmentedControl extends StatelessWidget {
+  const _StatusSegmentedControl({
+    required this.selected,
+    required this.activeCount,
+    required this.archivedCount,
+    required this.onChanged,
+  });
+
+  final _StatusFilter selected;
+  final int? activeCount;
+  final int? archivedCount;
+  final ValueChanged<_StatusFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AdultWorkspaceColors.softBlue,
+        borderRadius: AppRadius.mediumAll,
+        border: Border.all(color: AdultWorkspaceColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _StatusSegment(
+            key: const Key('accounts_status_active'),
+            label: 'Active',
+            count: activeCount,
+            selected: selected == _StatusFilter.active,
+            onTap: () => onChanged(_StatusFilter.active),
+          ),
+          _StatusSegment(
+            key: const Key('accounts_status_archived'),
+            label: 'Archived',
+            count: archivedCount,
+            selected: selected == _StatusFilter.archived,
+            onTap: () => onChanged(_StatusFilter.archived),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusSegment extends StatelessWidget {
+  const _StatusSegment({
+    super.key,
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final int? count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label accounts${count == null ? '' : ', $count'}',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: AppRadius.smallAll,
+          hoverColor: AdultWorkspaceColors.primary.withValues(alpha: 0.08),
+          focusColor: AdultWorkspaceColors.primary.withValues(alpha: 0.13),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            constraints: const BoxConstraints(minWidth: 96, minHeight: 36),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color:
+                  selected ? AdultWorkspaceColors.primary : Colors.transparent,
+              borderRadius: AppRadius.smallAll,
+              boxShadow:
+                  selected
+                      ? <BoxShadow>[
+                        BoxShadow(
+                          color: AdultWorkspaceColors.primary.withValues(
+                            alpha: 0.16,
+                          ),
+                          offset: const Offset(0, 2),
+                          blurRadius: 6,
+                        ),
+                      ]
+                      : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color:
+                        selected
+                            ? Colors.white
+                            : AdultWorkspaceColors.secondaryText,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (count != null) ...<Widget>[
+                  const SizedBox(width: 6),
+                  Text(
+                    '$count',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color:
+                          selected
+                              ? Colors.white.withValues(alpha: 0.82)
+                              : AdultWorkspaceColors.primaryMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountDirectory extends StatelessWidget {
+  const _AccountDirectory({
+    required this.rows,
+    required this.statusFilter,
+    required this.pendingIds,
+    required this.onArchiveTeacher,
+    required this.onRestoreTeacher,
+    required this.onArchiveStudent,
+    required this.onRestoreStudent,
+    required this.onEditTeacher,
+    required this.teachers,
+    required this.students,
+  });
+
+  final List<_AccountRow> rows;
+  final _StatusFilter statusFilter;
+  final Set<String> pendingIds;
+  final ValueChanged<Profile> onArchiveTeacher;
+  final ValueChanged<Profile> onRestoreTeacher;
+  final ValueChanged<Student> onArchiveStudent;
+  final ValueChanged<StudentWithSection> onRestoreStudent;
+  final ValueChanged<Profile> onEditTeacher;
+  final List<Profile> teachers;
+  final List<StudentWithSection> students;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('accounts_directory'),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: AppRadius.largeAll,
+        border: Border.all(color: AdultWorkspaceColors.border),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AdultWorkspaceColors.navy.withValues(alpha: 0.035),
+            offset: const Offset(0, 5),
+            blurRadius: 14,
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool compact = constraints.maxWidth < 1100;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        statusFilter == _StatusFilter.active
+                            ? 'Active accounts'
+                            : 'Archived accounts',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: AdultWorkspaceColors.ink,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${rows.length} ${rows.length == 1 ? 'account' : 'accounts'}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AdultWorkspaceColors.secondaryText,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (!compact) const _AccountTableHeader(),
+              const Divider(height: 1, color: AdultWorkspaceColors.border),
+              for (int index = 0; index < rows.length; index++) ...<Widget>[
+                _AccountRowCard(
+                  key: Key('account_row_${rows[index].id}'),
+                  row: rows[index],
+                  compact: compact,
+                  isPending: pendingIds.contains(rows[index].id),
+                  onArchiveTeacher: onArchiveTeacher,
+                  onRestoreTeacher: onRestoreTeacher,
+                  onArchiveStudent: onArchiveStudent,
+                  onRestoreStudent: onRestoreStudent,
+                  onEditTeacher: onEditTeacher,
+                  teachers: teachers,
+                  students: students,
+                ),
+                if (index != rows.length - 1)
+                  const Divider(
+                    height: 1,
+                    indent: 18,
+                    endIndent: 18,
+                    color: AdultWorkspaceColors.border,
                   ),
               ],
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                AppChip(
-                  label: 'Active',
-                  selected: statusFilter == _StatusFilter.active,
-                  onSelected: (_) => onStatusChanged(_StatusFilter.active),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                AppChip(
-                  label: 'Archived',
-                  selected: statusFilter == _StatusFilter.archived,
-                  onSelected: (_) => onStatusChanged(_StatusFilter.archived),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AccountTableHeader extends StatelessWidget {
+  const _AccountTableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AdultWorkspaceColors.fieldFill,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      child: const Row(
+        children: <Widget>[
+          Expanded(flex: 30, child: _TableColumnLabel('Account')),
+          Expanded(flex: 12, child: _TableColumnLabel('Role')),
+          Expanded(flex: 13, child: _TableColumnLabel('Grade')),
+          Expanded(flex: 17, child: _TableColumnLabel('Section')),
+          Expanded(flex: 14, child: _TableColumnLabel('Status')),
+          SizedBox(
+            width: 234,
+            child: _TableColumnLabel('Actions', alignEnd: true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TableColumnLabel extends StatelessWidget {
+  const _TableColumnLabel(this.label, {this.alignEnd = false});
+
+  final String label;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label.toUpperCase(),
+      textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+      style: const TextStyle(
+        color: AdultWorkspaceColors.secondaryText,
+        fontSize: 10,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.75,
+      ),
     );
   }
 }
 
 class _AccountRowCard extends StatelessWidget {
   const _AccountRowCard({
+    super.key,
     required this.row,
+    required this.compact,
     required this.isPending,
     required this.onArchiveTeacher,
     required this.onRestoreTeacher,
@@ -958,6 +1627,7 @@ class _AccountRowCard extends StatelessWidget {
   });
 
   final _AccountRow row;
+  final bool compact;
   final bool isPending;
   final ValueChanged<Profile> onArchiveTeacher;
   final ValueChanged<Profile> onRestoreTeacher;
@@ -999,87 +1669,167 @@ class _AccountRowCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget sectionValue =
-        row.additionalSectionLabels.isEmpty
-            ? Text(row.sectionLabel)
-            : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Flexible(
-                  child: Text(
-                    row.sectionLabel,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Tooltip(
-                  message:
-                      'Also assigned to:\n${row.additionalSectionLabels.join('\n')}',
-                  child: AppBadge(
-                    label: '+${row.additionalSectionLabels.length}',
-                  ),
-                ),
-              ],
-            );
-
-    return AppCard(
-      header: Row(
-        children: <Widget>[
-          AppAvatar(
-            initials: _initials(row.name),
-            size: AppComponentSize.small,
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(child: Text(row.name)),
-        ],
-      ),
-      trailing: AppBadge(label: row.statusLabel, variant: row.statusVariant),
-
-      footer: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: <Widget>[
-          if (row.role == _AccountRole.teacher) ...<Widget>[
-            _buildEditButton(),
-            const SizedBox(width: AppSpacing.xs),
-          ],
-          if (row.isArchived)
-            _buildRestoreButton()
-          else
-            AppButton(
-              label: 'Archive',
-              variant: AppButtonVariant.text,
-              size: AppComponentSize.small,
-              leadingIcon: Icons.archive_outlined,
-              isLoading: isPending,
-              onPressed: isPending ? null : () => _handleArchive(),
-            ),
-        ],
-      ),
+    return _AccountRowHoverSurface(
       child: Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.sm),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            _FieldColumn(
-              label: 'Role',
-              value: Text(
-                row.role == _AccountRole.teacher ? 'Teacher' : 'Student',
-              ),
-            ),
-            const SizedBox(width: AppSpacing.lg),
-            _FieldColumn(
-              label: 'Grade Level',
-              value: Text(row.gradeLevelLabel),
-            ),
-            const SizedBox(width: AppSpacing.lg),
-            Expanded(
-              child: _FieldColumn(label: 'Section', value: sectionValue),
-            ),
-          ],
-        ),
+        padding:
+            compact
+                ? const EdgeInsets.all(AppSpacing.md)
+                : const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        child: compact ? _buildCompactRow(context) : _buildDesktopRow(context),
       ),
     );
   }
+
+  Widget _buildDesktopRow(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Expanded(flex: 30, child: _buildIdentity(context)),
+        Expanded(flex: 12, child: _RowValue(_roleLabel)),
+        Expanded(flex: 13, child: _RowValue(row.gradeLevelLabel)),
+        Expanded(flex: 17, child: _buildSectionValue(context)),
+        Expanded(
+          flex: 14,
+          child: Align(alignment: Alignment.centerLeft, child: _buildStatus()),
+        ),
+        SizedBox(
+          width: 234,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: _buildActions(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactRow(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(child: _buildIdentity(context)),
+            const SizedBox(width: AppSpacing.sm),
+            _buildStatus(),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: AppSpacing.lg,
+          runSpacing: AppSpacing.sm,
+          children: <Widget>[
+            _CompactAccountDetail(label: 'Role', child: _RowValue(_roleLabel)),
+            _CompactAccountDetail(
+              label: 'Grade',
+              child: _RowValue(row.gradeLevelLabel),
+            ),
+            _CompactAccountDetail(
+              label: 'Section',
+              child: _buildSectionValue(context),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Align(alignment: Alignment.centerRight, child: _buildActions()),
+      ],
+    );
+  }
+
+  Widget _buildIdentity(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color:
+                row.role == _AccountRole.teacher
+                    ? AdultWorkspaceColors.softBlue
+                    : AdultWorkspaceColors.paleBlue,
+            borderRadius: AppRadius.mediumAll,
+            border: Border.all(color: AdultWorkspaceColors.border),
+          ),
+          child: Text(
+            _initials(row.name),
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: AdultWorkspaceColors.navy,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                row.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: AdultWorkspaceColors.ink,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                row.role == _AccountRole.teacher
+                    ? 'Educator account'
+                    : 'Learner account',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AdultWorkspaceColors.secondaryText,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionValue(BuildContext context) {
+    if (row.additionalSectionLabels.isEmpty) {
+      return _RowValue(row.sectionLabel);
+    }
+    return Row(
+      children: <Widget>[
+        Flexible(child: _RowValue(row.sectionLabel)),
+        const SizedBox(width: AppSpacing.xs),
+        Tooltip(
+          message:
+              'Also assigned to:\n${row.additionalSectionLabels.join('\n')}',
+          child: AppBadge(label: '+${row.additionalSectionLabels.length}'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatus() {
+    final String label =
+        row.statusLabel.isEmpty
+            ? row.statusLabel
+            : '${row.statusLabel[0].toUpperCase()}${row.statusLabel.substring(1)}';
+    return AppBadge(label: label, variant: row.statusVariant);
+  }
+
+  Widget _buildActions() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (row.role == _AccountRole.teacher) ...<Widget>[
+          _buildEditButton(),
+          const SizedBox(width: AppSpacing.xs),
+        ],
+        if (row.isArchived) _buildRestoreButton() else _buildArchiveButton(),
+      ],
+    );
+  }
+
+  String get _roleLabel =>
+      row.role == _AccountRole.teacher ? 'Teacher' : 'Student';
 
   /// Teacher-only. Visible for every teacher row, but only enabled when
   /// the underlying [Profile.status] is [ProfileStatus.approved] — for any
@@ -1090,11 +1840,9 @@ class _AccountRowCard extends StatelessWidget {
     final Profile teacher = teachers.firstWhere((t) => t.id == row.id);
     final bool canEdit = teacher.status == ProfileStatus.approved;
 
-    final Widget button = AppButton(
+    final Widget button = _AccountActionButton(
       label: 'Edit',
-      variant: AppButtonVariant.text,
-      size: AppComponentSize.small,
-      leadingIcon: Icons.edit_outlined,
+      icon: Icons.edit_outlined,
       isLoading: isPending,
       onPressed: (!canEdit || isPending) ? null : () => onEditTeacher(teacher),
     );
@@ -1117,11 +1865,9 @@ class _AccountRowCard extends StatelessWidget {
     final bool ineligible =
         row.role == _AccountRole.student && !row.studentCanRestore;
 
-    final Widget button = AppButton(
+    final Widget button = _AccountActionButton(
       label: 'Restore',
-      variant: AppButtonVariant.text,
-      size: AppComponentSize.small,
-      leadingIcon: Icons.restore,
+      icon: Icons.restore_rounded,
       isLoading: isPending,
       onPressed: (ineligible || isPending) ? null : () => _handleRestore(),
     );
@@ -1134,6 +1880,16 @@ class _AccountRowCard extends StatelessWidget {
             : "Can't restore — last section (${row.sectionLabel}) is archived.";
 
     return Tooltip(message: message, child: button);
+  }
+
+  Widget _buildArchiveButton() {
+    return _AccountActionButton(
+      label: 'Archive',
+      icon: Icons.inventory_2_outlined,
+      tone: _AccountActionTone.destructive,
+      isLoading: isPending,
+      onPressed: isPending ? null : _handleArchive,
+    );
   }
 
   void _handleArchive() {
@@ -1160,30 +1916,147 @@ class _AccountRowCard extends StatelessWidget {
   }
 }
 
-class _FieldColumn extends StatelessWidget {
-  const _FieldColumn({required this.label, required this.value});
+class _AccountRowHoverSurface extends StatefulWidget {
+  const _AccountRowHoverSurface({required this.child});
 
-  final String label;
-  final Widget value;
+  final Widget child;
+
+  @override
+  State<_AccountRowHoverSurface> createState() =>
+      _AccountRowHoverSurfaceState();
+}
+
+class _AccountRowHoverSurfaceState extends State<_AccountRowHoverSurface> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text(
-          label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        color:
+            _hovered
+                ? AdultWorkspaceColors.paleBlue.withValues(alpha: 0.72)
+                : Colors.transparent,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _RowValue extends StatelessWidget {
+  const _RowValue(this.value);
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      value,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: AdultWorkspaceColors.ink,
+        fontWeight: FontWeight.w500,
+        height: 1.35,
+      ),
+    );
+  }
+}
+
+class _CompactAccountDetail extends StatelessWidget {
+  const _CompactAccountDetail({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 128,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: AdultWorkspaceColors.secondaryText,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.65,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+enum _AccountActionTone { normal, destructive }
+
+class _AccountActionButton extends StatelessWidget {
+  const _AccountActionButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.tone = _AccountActionTone.normal,
+    this.isLoading = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final _AccountActionTone tone;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color enabledColor =
+        tone == _AccountActionTone.destructive
+            ? Theme.of(context).colorScheme.error
+            : AdultWorkspaceColors.primaryMuted;
+    return Semantics(
+      button: true,
+      enabled: onPressed != null && !isLoading,
+      label: label,
+      child: TextButton(
+        onPressed: isLoading ? null : onPressed,
+        style: TextButton.styleFrom(
+          foregroundColor: enabledColor,
+          disabledForegroundColor: AdultWorkspaceColors.outline,
+          minimumSize: const Size(0, 36),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          shape: const RoundedRectangleBorder(
+            borderRadius: AppRadius.mediumAll,
           ),
         ),
-        const SizedBox(height: AppSpacing.xs),
-        DefaultTextStyle(
-          style: Theme.of(context).textTheme.bodyMedium!,
-          child: value,
-        ),
-      ],
+        child:
+            isLoading
+                ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: enabledColor,
+                  ),
+                )
+                : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(icon, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+      ),
     );
   }
 }
