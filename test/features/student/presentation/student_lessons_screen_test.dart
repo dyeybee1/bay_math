@@ -8,6 +8,7 @@ import 'package:instructional_math_app/app/theme/app_theme.dart';
 import 'package:instructional_math_app/core/models/content_source_type.dart';
 import 'package:instructional_math_app/core/models/lesson.dart';
 import 'package:instructional_math_app/features/student/presentation/lesson_viewer_screen.dart';
+import 'package:instructional_math_app/features/student/presentation/student_curriculum_order.dart';
 import 'package:instructional_math_app/features/student/presentation/student_lessons_screen.dart';
 
 void main() {
@@ -48,12 +49,13 @@ void main() {
       }
     });
 
-    testWidgets('preserves lesson order and opens every selected lesson', (
+    testWidgets('uses curriculum order and opens every selected lesson', (
       WidgetTester tester,
     ) async {
       await _setLandscapeSize(tester, const Size(1280, 800));
       await tester.pumpWidget(_testApp(lessons: _lessons));
       await tester.pumpAndSettle();
+      final List<Lesson> orderedLessons = orderStudentLessons(_lessons);
 
       final Offset firstPosition = tester.getTopLeft(
         find.byKey(const Key('lesson_card_0')),
@@ -72,7 +74,7 @@ void main() {
       expect(find.text('LESSON 02'), findsOneWidget);
       expect(find.text('LESSON 03'), findsOneWidget);
 
-      for (int index = 0; index < _lessons.length; index += 1) {
+      for (int index = 0; index < orderedLessons.length; index += 1) {
         final Finder card = find.byKey(Key('lesson_card_$index'));
         await tester.ensureVisible(card);
         await tester.tap(card);
@@ -82,7 +84,7 @@ void main() {
         final LessonViewerScreen viewer = tester.widget<LessonViewerScreen>(
           find.byType(LessonViewerScreen),
         );
-        expect(identical(viewer.lesson, _lessons[index]), isTrue);
+        expect(identical(viewer.lesson, orderedLessons[index]), isTrue);
 
         Navigator.of(tester.element(find.byType(LessonViewerScreen))).pop();
         await tester.pump();

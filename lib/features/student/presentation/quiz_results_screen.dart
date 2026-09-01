@@ -56,7 +56,13 @@ class QuizResultsScreen extends ConsumerWidget {
             ),
             data: (answers) {
               final int correctCount = answers.where((a) => a.isCorrect).length;
-              final int totalQuestions = attempt.totalQuestions ?? answers.length;
+              // 0087 repairs the RLS-driven zero totals previously stored for
+              // Teacher-created quizzes. Keep a fallback for legacy rows: the
+              // denominator cannot be lower than the frozen answers shown.
+              final int storedTotalQuestions = attempt.totalQuestions ?? 0;
+              final int totalQuestions = storedTotalQuestions < answers.length
+                  ? answers.length
+                  : storedTotalQuestions;
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -10,6 +10,7 @@ import '../../../core/models/lesson.dart';
 import '../../../core/providers/supabase_providers.dart';
 import '../../../core/widgets/widgets.dart';
 import 'lesson_viewer_screen.dart';
+import 'student_curriculum_order.dart';
 
 /// Every lesson visible to the signed-in student — RLS
 /// (`lessons_student_select`, 0015) resolves built-in + section-assigned
@@ -32,9 +33,9 @@ abstract final class _LessonsPalette {
 
 /// Landscape-first lesson catalog for the Student tablet experience.
 ///
-/// Lesson fetching, ordering, refresh, retry, and viewer navigation remain
-/// unchanged. The layout pairs lessons into responsive rows so long content
-/// can determine each row's height without fixed-height overflow.
+/// Lesson fetching, refresh, retry, and viewer navigation remain unchanged.
+/// The Student catalog applies the canonical curriculum order before pairing
+/// lessons into responsive rows.
 class StudentLessonsScreen extends ConsumerWidget {
   const StudentLessonsScreen({super.key});
 
@@ -89,12 +90,16 @@ class StudentLessonsScreen extends ConsumerWidget {
                         );
                       }
 
+                      final List<Lesson> orderedLessons = orderStudentLessons(
+                        lessons,
+                      );
+
                       return RefreshIndicator(
                         onRefresh:
                             () async =>
                                 ref.invalidate(studentVisibleLessonsProvider),
                         child: _LessonCatalog(
-                          lessons: lessons,
+                          lessons: orderedLessons,
                           onOpenLesson: (Lesson lesson) {
                             Navigator.of(context).push(
                               MaterialPageRoute<void>(

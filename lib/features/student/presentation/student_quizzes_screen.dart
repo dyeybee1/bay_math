@@ -17,6 +17,7 @@ import '../../../core/repositories/quizzes_repository.dart';
 import '../../../core/widgets/widgets.dart';
 import 'quiz_results_screen.dart';
 import 'quiz_taking_screen.dart';
+import 'student_curriculum_order.dart';
 
 /// Every quiz visible to the signed-in student — RLS
 /// (`quizzes_student_select`, 0015) resolves built-in + section-assigned
@@ -57,8 +58,9 @@ abstract final class _QuizCatalogPalette {
 
 /// Landscape-first assessment catalog for the Student tablet experience.
 ///
-/// Quiz visibility, ordering, attempt state, refresh, and every destination
-/// remain unchanged; this screen only reshapes their presentation.
+/// Quiz visibility, attempt state, refresh, and every destination remain
+/// unchanged. The Student catalog applies assessment and curriculum order
+/// before rendering the cards.
 class StudentQuizzesScreen extends ConsumerWidget {
   const StudentQuizzesScreen({super.key});
 
@@ -113,11 +115,15 @@ class StudentQuizzesScreen extends ConsumerWidget {
                         );
                       }
 
+                      final List<Quiz> orderedQuizzes = orderStudentQuizzes(
+                        quizzes,
+                      );
+
                       return RefreshIndicator(
                         onRefresh:
                             () async =>
                                 ref.invalidate(studentVisibleQuizzesProvider),
-                        child: _AssessmentCatalog(quizzes: quizzes),
+                        child: _AssessmentCatalog(quizzes: orderedQuizzes),
                       );
                     },
                   ),

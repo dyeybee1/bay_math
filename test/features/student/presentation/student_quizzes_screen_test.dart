@@ -35,10 +35,10 @@ void main() {
         await tester.pumpAndSettle();
 
         final Finder firstCard = find.byKey(
-          const Key('assessment_card_regular-start'),
+          const Key('assessment_card_pre-start'),
         );
         final Finder secondCard = find.byKey(
-          const Key('assessment_card_pre-start'),
+          const Key('assessment_card_post-review'),
         );
         expect(firstCard, findsOneWidget);
         expect(secondCard, findsOneWidget);
@@ -53,7 +53,7 @@ void main() {
       }
     });
 
-    testWidgets('preserves order, explicit types, and action labels', (
+    testWidgets('uses assessment order, explicit types, and action labels', (
       WidgetTester tester,
     ) async {
       await _setLandscapeSize(tester, const Size(1280, 800));
@@ -61,13 +61,13 @@ void main() {
       await tester.pumpAndSettle();
 
       final Offset firstPosition = tester.getTopLeft(
-        find.byKey(const Key('assessment_card_regular-start')),
-      );
-      final Offset secondPosition = tester.getTopLeft(
         find.byKey(const Key('assessment_card_pre-start')),
       );
-      final Offset thirdPosition = tester.getTopLeft(
+      final Offset secondPosition = tester.getTopLeft(
         find.byKey(const Key('assessment_card_post-review')),
+      );
+      final Offset thirdPosition = tester.getTopLeft(
+        find.byKey(const Key('assessment_card_regular-start')),
       );
 
       expect(secondPosition.dy, closeTo(firstPosition.dy, 0.1));

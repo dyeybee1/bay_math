@@ -17,6 +17,7 @@ import '../../../core/providers/student_profile_provider.dart';
 import '../../../core/providers/student_session_provider.dart';
 import '../../../core/widgets/widgets.dart';
 import 'endless_quiz_landing_screen.dart';
+import 'student_curriculum_order.dart';
 import 'student_lessons_screen.dart';
 import 'student_quizzes_screen.dart';
 
@@ -65,8 +66,16 @@ class StudentHomeScreen extends ConsumerWidget {
 
     final Student? profile = profileAsync.value;
     final GradeLevel? gradeLevel = gradeAsync.value;
-    final int? lessonCount = lessonsAsync.value?.length;
-    final int? quizCount = quizzesAsync.value?.length;
+    final List<Lesson>? visibleLessons = lessonsAsync.value;
+    final List<Quiz>? visibleQuizzes = quizzesAsync.value;
+    final int? lessonCount =
+        visibleLessons == null
+            ? null
+            : orderStudentLessons(visibleLessons).length;
+    final int? quizCount =
+        visibleQuizzes == null
+            ? null
+            : orderStudentQuizzes(visibleQuizzes).length;
 
     return Scaffold(
       backgroundColor: _StudentHomePalette.pageBackground,
