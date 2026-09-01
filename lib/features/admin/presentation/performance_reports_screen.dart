@@ -1,13 +1,13 @@
 import 'dart:io' show File, Platform;
 import 'dart:typed_data' show Uint8List;
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/constants/app_radius.dart';
 import '../../../app/constants/app_spacing.dart';
+import '../../../app/theme/adult_workspace_colors.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/admin_quiz_result_row.dart'
     show AdminQuizResultRow, AdminSchoolYearOption;
@@ -53,22 +53,75 @@ class AdminPerformanceReportsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return const AppPageContainer(
-      scrollable: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          AppSectionHeader(
-            title: 'Performance Reports',
-            subtitle: 'Analyze mastery by topic',
-            action: _ExportReportButton(),
-          ),
-          SizedBox(height: AppSpacing.md),
-          _FilterCard(),
-          SizedBox(height: AppSpacing.md),
-          _TopicMasterySection(),
-        ],
+    return const ColoredBox(
+      key: Key('admin_performance_reports_screen'),
+      color: AdultWorkspaceColors.canvas,
+      child: AppPageContainer(
+        scrollable: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _PerformanceReportsPageHeader(),
+            SizedBox(height: AppSpacing.lg),
+            _FilterCard(),
+            SizedBox(height: AppSpacing.md),
+            _TopicMasterySection(),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _PerformanceReportsPageHeader extends StatelessWidget {
+  const _PerformanceReportsPageHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Widget heading = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Performance Reports',
+              key: const Key('performance_reports_page_title'),
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                color: AdultWorkspaceColors.ink,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.35,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Review topic-level mastery across selected grades and sections.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AdultWorkspaceColors.secondaryText,
+                height: 1.4,
+              ),
+            ),
+          ],
+        );
+
+        if (constraints.maxWidth < 640) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              heading,
+              const SizedBox(height: AppSpacing.md),
+              const _ExportReportButton(),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(child: heading),
+            const SizedBox(width: AppSpacing.lg),
+            const _ExportReportButton(),
+          ],
+        );
+      },
     );
   }
 }
@@ -96,8 +149,12 @@ class _ExportReportButton extends ConsumerWidget {
     final bool canExport = rows != null && rows.isNotEmpty;
 
     return AppButton(
+      key: const Key('performance_reports_export_button'),
       label: 'Export Report',
-      leadingIcon: Icons.description_outlined,
+      leadingIcon: Icons.file_download_outlined,
+      variant: AppButtonVariant.outlined,
+      size: AppComponentSize.small,
+      semanticLabel: 'Export filtered performance report',
       onPressed: canExport ? () => _export(context, ref, rows) : null,
     );
   }
@@ -230,9 +287,16 @@ typedef _SelectionUpdater =
       update,
     );
 
-/// Grade Level / Section / "Date Range" (School Year) / Topic filter row,
-/// inside an [AppCard] with a "Filters" header — same bordered-panel shape
-/// [AdminQuizResultsScreen]'s own `_FilterCard` uses.
+bool _hasActiveFilters(AdminPerformanceReportsFilterSelection selection) =>
+    selection.gradeLevel != null ||
+    selection.sectionId != null ||
+    selection.topic != null ||
+    selection.schoolYearId != null;
+
+/// Grade Level / Section / Topic / "Date Range" (School Year) filter
+/// toolbar. At normal desktop widths the four existing controls and reset
+/// action share one row; narrower laptop windows wrap them without changing
+/// their behavior.
 ///
 /// The third dropdown is labeled "Date Range" for the identical reason
 /// [AdminQuizResultsScreen]'s own `_SchoolYearDropdown` doc comment gives:
@@ -294,38 +358,116 @@ class _FilterCard extends ConsumerWidget {
       },
     );
 
-    return AppCard(
-      header: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.filter_alt_outlined),
-          SizedBox(width: AppSpacing.xs),
-          Text('Filters'),
-        ],
+    final bool filtersActive = _hasActiveFilters(selection);
+    return Container(
+      key: const Key('performance_reports_filter_toolbar'),
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: AdultWorkspaceColors.border),
+          bottom: BorderSide(color: AdultWorkspaceColors.border),
+        ),
       ),
-      child: Wrap(
-        spacing: AppSpacing.md,
-        runSpacing: AppSpacing.sm,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          AppDropdown<GradeLevel>(
-            label: 'Grade Level',
-            width: 200,
-            options: <AppDropdownOption<GradeLevel>>[
-              const AppDropdownOption<GradeLevel>(
-                value: null,
-                label: 'All Grades',
-              ),
-              for (final GradeLevel g in GradeLevel.values)
-                AppDropdownOption<GradeLevel>(value: g, label: g.label),
-            ],
-            selected: selection.gradeLevel,
-            onChanged:
-                (GradeLevel? value) =>
-                    updateSelection((s) => s.withGradeLevel(value)),
+          Text(
+            'Filter performance data',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: AdultWorkspaceColors.ink,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-          _SectionDropdown(selection: selection, onUpdate: updateSelection),
-          _SchoolYearDropdown(selection: selection, onUpdate: updateSelection),
-          _TopicDropdown(selection: selection, onUpdate: updateSelection),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              const double spacing = 10;
+              const double clearWidth = 116;
+              final bool singleRow = constraints.maxWidth >= 920;
+              final int columns = constraints.maxWidth >= 520 ? 2 : 1;
+              final double fieldWidth =
+                  singleRow
+                      ? (constraints.maxWidth - clearWidth - spacing * 4) / 4
+                      : (constraints.maxWidth - spacing * (columns - 1)) /
+                          columns;
+
+              final List<Widget> controls = <Widget>[
+                AppDropdown<GradeLevel>(
+                  key: const Key('performance_reports_grade_filter'),
+                  label: 'Grade Level',
+                  width: fieldWidth,
+                  size: AppComponentSize.small,
+                  options: <AppDropdownOption<GradeLevel>>[
+                    const AppDropdownOption<GradeLevel>(
+                      value: null,
+                      label: 'All Grades',
+                    ),
+                    for (final GradeLevel grade in GradeLevel.values)
+                      AppDropdownOption<GradeLevel>(
+                        value: grade,
+                        label: grade.label,
+                      ),
+                  ],
+                  selected: selection.gradeLevel,
+                  onChanged:
+                      (GradeLevel? value) => updateSelection(
+                        (AdminPerformanceReportsFilterSelection current) =>
+                            current.withGradeLevel(value),
+                      ),
+                ),
+                _SectionDropdown(
+                  selection: selection,
+                  onUpdate: updateSelection,
+                  width: fieldWidth,
+                ),
+                _TopicDropdown(
+                  selection: selection,
+                  onUpdate: updateSelection,
+                  width: fieldWidth,
+                ),
+                _SchoolYearDropdown(
+                  selection: selection,
+                  onUpdate: updateSelection,
+                  width: fieldWidth,
+                ),
+              ];
+              final Widget clearButton = SizedBox(
+                width: clearWidth,
+                child: TextButton(
+                  key: const Key('performance_reports_clear_filters'),
+                  onPressed:
+                      filtersActive
+                          ? () => updateSelection(
+                            (_) =>
+                                const AdminPerformanceReportsFilterSelection(),
+                          )
+                          : null,
+                  child: const Text('Clear filters'),
+                ),
+              );
+
+              if (singleRow) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    for (int index = 0; index < controls.length; index++) ...[
+                      controls[index],
+                      const SizedBox(width: spacing),
+                    ],
+                    clearButton,
+                  ],
+                );
+              }
+
+              return Wrap(
+                spacing: spacing,
+                runSpacing: AppSpacing.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[...controls, clearButton],
+              );
+            },
+          ),
         ],
       ),
     );
@@ -392,10 +534,15 @@ class _SectionOption {
 }
 
 class _SectionDropdown extends ConsumerWidget {
-  const _SectionDropdown({required this.selection, required this.onUpdate});
+  const _SectionDropdown({
+    required this.selection,
+    required this.onUpdate,
+    required this.width,
+  });
 
   final AdminPerformanceReportsFilterSelection selection;
   final _SelectionUpdater onUpdate;
+  final double width;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -410,9 +557,12 @@ class _SectionDropdown extends ConsumerWidget {
       // programmatic sectionId reset (the `ref.listen` stale-selection
       // guard above) — same reasoning AdminQuizResultsScreen's own
       // `_SectionDropdown` gives for this key.
-      key: ValueKey<String?>(selection.sectionId),
+      key: ValueKey<String>(
+        'performance_reports_section_${selection.sectionId ?? 'all'}',
+      ),
       label: 'Section',
-      width: 200,
+      width: width,
+      size: AppComponentSize.small,
       enabled: !optionsAsync.isLoading,
       options: <AppDropdownOption<String>>[
         const AppDropdownOption<String>(value: null, label: 'All Sections'),
@@ -431,10 +581,15 @@ class _SectionDropdown extends ConsumerWidget {
 /// Part 2). Layout/behavior copied verbatim from
 /// [AdminQuizResultsScreen]'s own `_SchoolYearDropdown`.
 class _SchoolYearDropdown extends ConsumerWidget {
-  const _SchoolYearDropdown({required this.selection, required this.onUpdate});
+  const _SchoolYearDropdown({
+    required this.selection,
+    required this.onUpdate,
+    required this.width,
+  });
 
   final AdminPerformanceReportsFilterSelection selection;
   final _SelectionUpdater onUpdate;
+  final double width;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -445,8 +600,10 @@ class _SchoolYearDropdown extends ConsumerWidget {
         yearsAsync.value ?? const <AdminSchoolYearOption>[];
 
     return AppDropdown<String>(
+      key: const Key('performance_reports_date_filter'),
       label: 'Date Range',
-      width: 200,
+      width: width,
+      size: AppComponentSize.small,
       enabled: !yearsAsync.isLoading,
       options: <AppDropdownOption<String>>[
         const AppDropdownOption<String>(value: null, label: 'All Time'),
@@ -478,10 +635,15 @@ class _SchoolYearDropdown extends ConsumerWidget {
 /// needed or made; this dropdown is built the exact same way
 /// [_SchoolYearDropdown]/`AdminQuizResultsScreen`'s own dropdowns are.
 class _TopicDropdown extends ConsumerWidget {
-  const _TopicDropdown({required this.selection, required this.onUpdate});
+  const _TopicDropdown({
+    required this.selection,
+    required this.onUpdate,
+    required this.width,
+  });
 
   final AdminPerformanceReportsFilterSelection selection;
   final _SelectionUpdater onUpdate;
+  final double width;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -491,8 +653,10 @@ class _TopicDropdown extends ConsumerWidget {
     final List<String> topics = topicsAsync.value ?? const <String>[];
 
     return AppDropdown<String>(
+      key: const Key('performance_reports_topic_filter'),
       label: 'Topic',
-      width: 260,
+      width: width,
+      size: AppComponentSize.small,
       enabled: !topicsAsync.isLoading,
       options: <AppDropdownOption<String>>[
         const AppDropdownOption<String>(value: null, label: 'All Topics'),
@@ -517,95 +681,169 @@ class _TopicMasterySection extends ConsumerWidget {
     final AsyncValue<List<AdminTopicMasteryRow>> rowsAsync = ref.watch(
       adminPerformanceReportsProvider,
     );
+    final AdminPerformanceReportsFilterSelection selection = ref.watch(
+      adminPerformanceReportsFilterSelectionProvider,
+    );
 
-    return AppCard(
-      header: const Text('Overall Topic Mastery'),
-      child: rowsAsync.when(
-        loading:
-            () => const Padding(
-              padding: EdgeInsets.all(AppSpacing.xl),
-              child: AppLoadingIndicator(),
+    return rowsAsync.when(
+      loading:
+          () => const _TopicMasterySurface(
+            child: _MasteryStateBody(
+              child: AppLoadingIndicator(message: 'Loading topic mastery'),
             ),
-        error:
-            (error, _) => AppErrorState(
-              message:
-                  error is AppFailure
-                      ? error.message
-                      : 'Could not load topic mastery.',
-              onRetry: () => ref.invalidate(adminPerformanceReportsProvider),
+          ),
+      error:
+          (Object error, StackTrace stackTrace) => _TopicMasterySurface(
+            child: _MasteryStateBody(
+              child: AppErrorState(
+                message:
+                    error is AppFailure
+                        ? error.message
+                        : 'Could not load topic mastery.',
+                onRetry: () => ref.invalidate(adminPerformanceReportsProvider),
+              ),
             ),
-        data: (List<AdminTopicMasteryRow> rows) {
-          if (rows.isEmpty) {
-            return const AppEmptyState(
-              icon: Icons.insights_outlined,
-              title: 'No mastery data found',
-              description: 'Try adjusting the filters above.',
-            );
-          }
-          return _TopicMasteryChart(rows: rows);
-        },
+          ),
+      data: (List<AdminTopicMasteryRow> rows) {
+        if (rows.isEmpty) {
+          final bool filtersActive = _hasActiveFilters(selection);
+          return _TopicMasterySurface(
+            topicCount: 0,
+            child: _MasteryStateBody(
+              child: AppEmptyState(
+                icon: Icons.insights_outlined,
+                title:
+                    filtersActive
+                        ? 'No performance data matches the selected filters'
+                        : 'No mastery data available yet',
+                description:
+                    filtersActive
+                        ? 'Clear the filters or choose a different reporting context.'
+                        : 'Topic mastery will appear after assessment data is available.',
+                actionLabel: filtersActive ? 'Clear filters' : null,
+                onAction:
+                    filtersActive
+                        ? () => ref
+                            .read(
+                              adminPerformanceReportsFilterSelectionProvider
+                                  .notifier,
+                            )
+                            .update(
+                              (_) =>
+                                  const AdminPerformanceReportsFilterSelection(),
+                            )
+                        : null,
+              ),
+            ),
+          );
+        }
+        return _TopicMasterySurface(
+          topicCount: rows.length,
+          child: _TopicMasteryChart(rows: rows),
+        );
+      },
+    );
+  }
+}
+
+class _TopicMasterySurface extends StatelessWidget {
+  const _TopicMasterySurface({required this.child, this.topicCount});
+
+  final Widget child;
+  final int? topicCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('performance_reports_mastery_surface'),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: AppRadius.mediumAll,
+        border: Border.all(color: AdultWorkspaceColors.border),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AdultWorkspaceColors.navy.withValues(alpha: 0.025),
+            offset: const Offset(0, 3),
+            blurRadius: 10,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: 13,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Overall Topic Mastery',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: AdultWorkspaceColors.ink,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Mastery percentages reflect the currently selected filters.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AdultWorkspaceColors.secondaryText,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (topicCount != null) ...<Widget>[
+                  const SizedBox(width: AppSpacing.md),
+                  Text(
+                    '$topicCount ${topicCount == 1 ? 'topic' : 'topics'}',
+                    key: const Key('performance_reports_topic_count'),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: AdultWorkspaceColors.primaryMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AdultWorkspaceColors.border),
+          child,
+        ],
       ),
     );
   }
 }
 
-/// One horizontal bar per [AdminTopicMasteryRow], 0-100 scale, topic name
-/// as the row label.
-///
-/// SORT ORDER — ascending by [AdminTopicMasteryRow.masteryPercent] (lowest
-/// mastery first), NOT alphabetical. There is no fixed mockup order to
-/// match once there can be more than six topics (per the CONFIRMED PROJECT
-/// DECISION), so this is a deliberate choice, stated per this phase's own
-/// instruction: an Admin opening a school-wide "Performance Reports" page
-/// is most likely scanning for topics that need attention, so the
-/// weakest-mastery topics surface at the top rather than requiring a scroll
-/// past every alphabetically-earlier, already-strong topic first. (Unlike
-/// `student_statistics_screen.dart`'s own `_CompetencyMasteryCard`, which
-/// sorts alphabetically because a student is scanning for one specific
-/// topic they already have in mind — a different task, a different
-/// ordering choice, deliberately not copied here.)
-///
-/// VERTICALLY SCROLLABLE CONTAINER — per this phase's own instruction not
-/// to assume a small fixed row count (topics can be curriculum-lesson-
-/// sized in number). A fixed-height [SizedBox] + internal [ListView],
-/// rather than letting the card grow unbounded inside the page's own
-/// [AppPageContainer.scrollable] column — same "fixed chart height, own
-/// scroll region" shape `student_statistics_screen.dart`'s chart cards
-/// already use (`SizedBox(height: 240, child: ...)`), just taller and
-/// internally list-scrollable here since the row count isn't bounded at
-/// six the way a pie/pre-set bar chart's is.
-///
-/// CHART IMPLEMENTATION NOTE — fl_chart's `BarChart` (this package's
-/// version, ^0.69.2) only ever renders bars growing vertically from the
-/// bottom; there is no built-in horizontal-orientation option. Rather than
-/// rotate one large multi-group `BarChart` as a whole (which would also
-/// require counter-rotating every axis-title widget and re-deriving touch/
-/// tooltip hit-testing under rotation — a known source of subtle bugs and
-/// not something verifiable without running the app), each row below is
-/// its OWN small single-bar `BarChart`, wrapped in a `RotatedBox` to grow
-/// horizontally, with its axis titles and touch/tooltip both explicitly
-/// disabled (the topic name and percentage are already shown as plain
-/// [Text] immediately above every bar, so nothing is lost by disabling
-/// the chart's own labels/tooltip). This still genuinely uses fl_chart's
-/// `BarChart`/`BarChartRodData` (same rod color/`AppRadius.smallAll`
-/// styling `_LessonScoresBarChart`, in the Student Statistics screen,
-/// already uses) for every bar, just composed per-row instead of as one
-/// chart object. FLAGGED FOR VISUAL QA: `RotatedBox(quarterTurns: 3)` is
-/// the standard community workaround for this exact fl_chart limitation
-/// (270° clockwise = 90° counter-clockwise, turning a bottom-up vertical
-/// bar into a left-to-right horizontal one) and should be visually
-/// correct, but — per this phase's own note that nothing here was run —
-/// this is the one piece of this screen most worth a first-run visual
-/// check; if a bar's fill direction ever looks reversed, flipping to
-/// `quarterTurns: 1` is the fix.
+class _MasteryStateBody extends StatelessWidget {
+  const _MasteryStateBody({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(height: 300, child: Center(child: child));
+  }
+}
+
+/// One horizontal comparison row per server-provided mastery value. The
+/// existing ascending order is preserved; only the rotated mini-chart
+/// implementation and detached 0/25/50/75/100 scale are replaced.
 class _TopicMasteryChart extends StatelessWidget {
   const _TopicMasteryChart({required this.rows});
 
   final List<AdminTopicMasteryRow> rows;
 
-  static const double _rowHeight = 56;
-  static const double _barTrackHeight = 20;
-  static const double _maxChartHeight = 420;
+  static const double _estimatedRowHeight = 68;
+  static const double _maxChartHeight = 520;
 
   @override
   Widget build(BuildContext context) {
@@ -615,146 +853,180 @@ class _TopicMasteryChart extends StatelessWidget {
             a.masteryPercent.compareTo(b.masteryPercent),
       );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        const _TopicMasteryAxisScale(),
-        const SizedBox(height: AppSpacing.xs),
-        SizedBox(
-          height:
-              (sorted.length * _rowHeight)
-                  .clamp(_rowHeight, _maxChartHeight)
-                  .toDouble(),
-          child: ListView.separated(
-            itemCount: sorted.length,
-            separatorBuilder:
-                (BuildContext context, int index) =>
-                    const SizedBox(height: AppSpacing.sm),
-            itemBuilder:
-                (BuildContext context, int index) =>
-                    _TopicMasteryBarRow(row: sorted[index]),
-          ),
-        ),
-      ],
+    final double chartHeight =
+        (sorted.length * _estimatedRowHeight)
+            .clamp(_estimatedRowHeight, _maxChartHeight)
+            .toDouble();
+    return SizedBox(
+      key: const Key('performance_reports_mastery_list'),
+      height: chartHeight,
+      child: ListView.separated(
+        primary: false,
+        itemCount: sorted.length,
+        separatorBuilder:
+            (BuildContext context, int index) => const Divider(
+              height: 1,
+              indent: AppSpacing.md,
+              endIndent: AppSpacing.md,
+              color: AdultWorkspaceColors.border,
+            ),
+        itemBuilder:
+            (BuildContext context, int index) =>
+                _TopicMasteryBarRow(row: sorted[index]),
+      ),
     );
   }
 }
 
-/// A plain "0 / 25 / 50 / 75 / 100" label row establishing the chart's
-/// shared 0-100 scale — each row's own mini `BarChart` below carries its
-/// own `minY: 0, maxY: 100` but has no visible axis of its own (see
-/// [_TopicMasteryChart]'s own doc comment on why), so this single shared
-/// header is what actually shows the scale to the admin.
-class _TopicMasteryAxisScale extends StatelessWidget {
-  const _TopicMasteryAxisScale();
-
-  static const List<String> _ticks = <String>['0', '25', '50', '75', '100'];
-
-  @override
-  Widget build(BuildContext context) {
-    final TextStyle? style = Theme.of(context).textTheme.bodySmall;
-    return Row(
-      children: <Widget>[
-        for (final String tick in _ticks)
-          Expanded(child: Text(tick, style: style)),
-      ],
-    );
-  }
-}
-
-class _TopicMasteryBarRow extends StatelessWidget {
+class _TopicMasteryBarRow extends StatefulWidget {
   const _TopicMasteryBarRow({required this.row});
 
   final AdminTopicMasteryRow row;
 
   @override
-  Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    final double clampedPercent = row.masteryPercent.clamp(0, 100).toDouble();
+  State<_TopicMasteryBarRow> createState() => _TopicMasteryBarRowState();
+}
 
+class _TopicMasteryBarRowState extends State<_TopicMasteryBarRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final AdminTopicMasteryRow row = widget.row;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        color:
+            _hovered
+                ? AdultWorkspaceColors.paleBlue.withValues(alpha: 0.58)
+                : Colors.transparent,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: 13,
+        ),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            if (constraints.maxWidth < 820) {
+              return _CompactMasteryRow(row: row);
+            }
+            return _DesktopMasteryRow(row: row);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopMasteryRow extends StatelessWidget {
+  const _DesktopMasteryRow({required this.row});
+
+  final AdminTopicMasteryRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        SizedBox(width: 330, child: _TopicName(topic: row.topic)),
+        const SizedBox(width: AppSpacing.xl),
+        Expanded(child: _MasteryTrack(row: row)),
+        const SizedBox(width: AppSpacing.lg),
+        SizedBox(width: 72, child: _MasteryPercentage(row: row)),
+      ],
+    );
+  }
+}
+
+class _CompactMasteryRow extends StatelessWidget {
+  const _CompactMasteryRow({required this.row});
+
+  final AdminTopicMasteryRow row;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            // question_bank.topic used verbatim (rule #9's convention,
-            // 0035/0052) — no maxLines/ellipsis, wraps naturally instead
-            // of ever being cut off, same as
-            // student_statistics_screen.dart's own `_TopicMasteryBar`.
-            Expanded(
-              child: Text(
-                row.topic,
-                style: textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.primary,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              formatPercent(row.masteryPercent),
-              style: textTheme.bodyMedium,
-            ),
+            Expanded(child: _TopicName(topic: row.topic)),
+            const SizedBox(width: AppSpacing.md),
+            _MasteryPercentage(row: row),
           ],
         ),
-        const SizedBox(height: AppSpacing.xs),
-        SizedBox(
-          height: _TopicMasteryChart._barTrackHeight,
-          child: RotatedBox(
-            quarterTurns: 1,
-            child: BarChart(
-              BarChartData(
-                minY: 0,
-                maxY: 100,
-                alignment: BarChartAlignment.center,
-                gridData: const FlGridData(show: false),
-                borderData: FlBorderData(show: false),
-                titlesData: const FlTitlesData(
-                  topTitles: AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  rightTitles: AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                ),
-                // Disabled rather than adapted — touch/tooltip hit-testing
-                // under a RotatedBox isn't something this phase can verify
-                // without running the app, and the topic name + percentage
-                // are already shown as plain text immediately above this
-                // bar, so nothing is lost by disabling it. See
-                // _TopicMasteryChart's own doc comment.
-                barTouchData: BarTouchData(enabled: false),
-                barGroups: <BarChartGroupData>[
-                  BarChartGroupData(
-                    x: 0,
-                    barRods: <BarChartRodData>[
-                      BarChartRodData(
-                        toY: clampedPercent,
-                        color: colorScheme.primary,
-                        width: 16,
-                        borderRadius: AppRadius.smallAll,
-                        backDrawRodData: BackgroundBarChartRodData(
-                          show: true,
-                          toY: 100,
-                          color: colorScheme.surfaceContainerHighest,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+        const SizedBox(height: 10),
+        _MasteryTrack(row: row),
+      ],
+    );
+  }
+}
+
+class _TopicName extends StatelessWidget {
+  const _TopicName({required this.topic});
+
+  final String topic;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      topic,
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        color: AdultWorkspaceColors.ink,
+        fontWeight: FontWeight.w600,
+        height: 1.35,
+      ),
+    );
+  }
+}
+
+class _MasteryPercentage extends StatelessWidget {
+  const _MasteryPercentage({required this.row});
+
+  final AdminTopicMasteryRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      formatPercent(row.masteryPercent),
+      key: ValueKey<String>('mastery_percentage_${row.topic}'),
+      textAlign: TextAlign.right,
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        color: AdultWorkspaceColors.navy,
+        fontWeight: FontWeight.w700,
+        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+      ),
+    );
+  }
+}
+
+class _MasteryTrack extends StatelessWidget {
+  const _MasteryTrack({required this.row});
+
+  final AdminTopicMasteryRow row;
+
+  @override
+  Widget build(BuildContext context) {
+    final double visualPercent =
+        row.masteryPercent.clamp(0, 100).toDouble() / 100;
+    return Semantics(
+      label: '${row.topic}: ${formatPercent(row.masteryPercent)} mastery',
+      child: ClipRRect(
+        borderRadius: AppRadius.smallAll,
+        child: Container(
+          key: ValueKey<String>('mastery_track_${row.topic}'),
+          height: 10,
+          color: AdultWorkspaceColors.fieldFill,
+          alignment: Alignment.centerLeft,
+          child: FractionallySizedBox(
+            widthFactor: visualPercent,
+            heightFactor: 1,
+            child: const ColoredBox(color: AdultWorkspaceColors.primary),
           ),
         ),
-      ],
+      ),
     );
   }
 }

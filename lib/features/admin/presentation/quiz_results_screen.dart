@@ -5,7 +5,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/constants/app_radius.dart';
 import '../../../app/constants/app_spacing.dart';
+import '../../../app/theme/adult_workspace_colors.dart';
+import '../../../app/theme/app_semantic_colors.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/admin_quiz_result_row.dart';
 import '../../../core/models/section.dart' show GradeLevel;
@@ -44,22 +47,75 @@ class AdminQuizResultsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return const AppPageContainer(
-      scrollable: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          AppSectionHeader(
-            title: 'Quiz Results',
-            subtitle: 'School-wide monitoring of assessment results',
-            action: _ExportReportButton(),
-          ),
-          SizedBox(height: AppSpacing.md),
-          _FilterCard(),
-          SizedBox(height: AppSpacing.md),
-          _ResultsTable(),
-        ],
+    return const ColoredBox(
+      key: Key('admin_quiz_results_screen'),
+      color: AdultWorkspaceColors.canvas,
+      child: AppPageContainer(
+        scrollable: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _QuizResultsPageHeader(),
+            SizedBox(height: AppSpacing.lg),
+            _FilterCard(),
+            SizedBox(height: AppSpacing.md),
+            _ResultsTable(),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _QuizResultsPageHeader extends StatelessWidget {
+  const _QuizResultsPageHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Widget heading = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              'Quiz Results',
+              key: const Key('quiz_results_page_title'),
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                color: AdultWorkspaceColors.ink,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.35,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Review and export school-wide assessment results.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: AdultWorkspaceColors.secondaryText,
+                height: 1.4,
+              ),
+            ),
+          ],
+        );
+
+        if (constraints.maxWidth < 640) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              heading,
+              const SizedBox(height: AppSpacing.md),
+              const _ExportReportButton(),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(child: heading),
+            const SizedBox(width: AppSpacing.lg),
+            const _ExportReportButton(),
+          ],
+        );
+      },
     );
   }
 }
@@ -88,8 +144,12 @@ class _ExportReportButton extends ConsumerWidget {
     final bool canExport = rows != null && rows.isNotEmpty;
 
     return AppButton(
+      key: const Key('quiz_results_export_button'),
       label: 'Export Report',
-      leadingIcon: Icons.description_outlined,
+      leadingIcon: Icons.file_download_outlined,
+      variant: AppButtonVariant.outlined,
+      size: AppComponentSize.small,
+      semanticLabel: 'Export filtered quiz results report',
       onPressed: canExport ? () => _export(context, ref, rows) : null,
     );
   }
@@ -100,8 +160,9 @@ class _ExportReportButton extends ConsumerWidget {
     List<AdminQuizResultRow> rows,
   ) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    final AdminQuizResultsFilterSelection selection =
-        ref.read(adminQuizResultsFilterSelectionProvider);
+    final AdminQuizResultsFilterSelection selection = ref.read(
+      adminQuizResultsFilterSelectionProvider,
+    );
 
     // Resolve the four filter dimensions' display labels for the
     // filename. Grade and Assessment Type are cheap (both already carry
@@ -123,7 +184,7 @@ class _ExportReportButton extends ConsumerWidget {
     if (selection.schoolYearId != null) {
       final List<AdminSchoolYearOption> years =
           ref.read(adminQuizResultsSchoolYearsProvider).value ??
-              const <AdminSchoolYearOption>[];
+          const <AdminSchoolYearOption>[];
       for (final AdminSchoolYearOption year in years) {
         if (year.schoolYearId == selection.schoolYearId) {
           schoolYearLabel = year.label;
@@ -149,7 +210,9 @@ class _ExportReportButton extends ConsumerWidget {
     );
 
     if (savePath == null) {
-      messenger.showSnackBar(const SnackBar(content: Text('Export cancelled.')));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Export cancelled.')),
+      );
       return;
     }
 
@@ -157,11 +220,16 @@ class _ExportReportButton extends ConsumerWidget {
       final String resolvedPath =
           savePath.toLowerCase().endsWith('.csv') ? savePath : '$savePath.csv';
       await File(resolvedPath).writeAsBytes(utf8.encode(csvContent));
-      final String displayName = resolvedPath.split(Platform.pathSeparator).last;
-      messenger.showSnackBar(SnackBar(content: Text('Exported to $displayName')));
+      final String displayName =
+          resolvedPath.split(Platform.pathSeparator).last;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Exported to $displayName')),
+      );
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Failed to export quiz results. Please try again.')),
+        const SnackBar(
+          content: Text('Failed to export quiz results. Please try again.'),
+        ),
       );
     }
   }
@@ -204,25 +272,27 @@ class _ExportReportButton extends ConsumerWidget {
 /// scope (UI only, no new SQL/repository surface).
 final FutureProvider<List<_SectionOption>> _sectionFilterOptionsProvider =
     FutureProvider.autoDispose<List<_SectionOption>>((ref) async {
-  final AdminQuizResultsFilterSelection selection =
-      ref.watch(adminQuizResultsFilterSelectionProvider);
-  final List<AdminQuizResultRow> rows =
-      await ref.watch(adminQuizResultsRepositoryProvider).fetchResults(
+      final AdminQuizResultsFilterSelection selection = ref.watch(
+        adminQuizResultsFilterSelectionProvider,
+      );
+      final List<AdminQuizResultRow> rows = await ref
+          .watch(adminQuizResultsRepositoryProvider)
+          .fetchResults(
             gradeLevel: selection.gradeLevel,
             assessmentTypeFilter: selection.assessmentTypeFilter,
             schoolYearId: selection.schoolYearId,
           );
 
-  final Map<String, String> nameBySectionId = <String, String>{};
-  for (final AdminQuizResultRow row in rows) {
-    nameBySectionId[row.sectionId] = row.sectionName;
-  }
-  final List<_SectionOption> options = <_SectionOption>[
-    for (final MapEntry<String, String> entry in nameBySectionId.entries)
-      _SectionOption(id: entry.key, name: entry.value),
-  ]..sort((_SectionOption a, _SectionOption b) => a.name.compareTo(b.name));
-  return options;
-});
+      final Map<String, String> nameBySectionId = <String, String>{};
+      for (final AdminQuizResultRow row in rows) {
+        nameBySectionId[row.sectionId] = row.sectionName;
+      }
+      final List<_SectionOption> options = <_SectionOption>[
+        for (final MapEntry<String, String> entry in nameBySectionId.entries)
+          _SectionOption(id: entry.key, name: entry.value),
+      ]..sort((_SectionOption a, _SectionOption b) => a.name.compareTo(b.name));
+      return options;
+    });
 
 class _SectionOption {
   const _SectionOption({required this.id, required this.name});
@@ -230,9 +300,17 @@ class _SectionOption {
   final String name;
 }
 
+bool _hasActiveFilters(AdminQuizResultsFilterSelection selection) =>
+    selection.gradeLevel != null ||
+    selection.sectionId != null ||
+    selection.assessmentTypeFilter !=
+        AdminQuizResultsAssessmentTypeFilter.all ||
+    selection.schoolYearId != null;
+
 /// Grade Level / Section / Assessment Type / "Date Range" (School Year)
-/// filter row, inside a [AppCard] with a "Filters" header, matching the
-/// mockup's bordered filter panel.
+/// filter toolbar. At normal desktop widths all four controls and the
+/// reset action share one row; narrower laptop windows wrap the same
+/// controls without changing their behavior.
 ///
 /// The fourth dropdown is labeled "Date Range" per the mockup's visual
 /// style even though the underlying filter is School Year, not a literal
@@ -246,11 +324,13 @@ class _FilterCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AdminQuizResultsFilterSelection selection =
-        ref.watch(adminQuizResultsFilterSelectionProvider);
+    final AdminQuizResultsFilterSelection selection = ref.watch(
+      adminQuizResultsFilterSelectionProvider,
+    );
 
     void updateSelection(
-      AdminQuizResultsFilterSelection Function(AdminQuizResultsFilterSelection) update,
+      AdminQuizResultsFilterSelection Function(AdminQuizResultsFilterSelection)
+      update,
     ) {
       ref.read(adminQuizResultsFilterSelectionProvider.notifier).update(update);
     }
@@ -266,82 +346,187 @@ class _FilterCard extends ConsumerWidget {
     // returns zero rows. `ref.listen` (not a direct check during build)
     // because dispatching a provider update belongs in a listener
     // callback, not in the middle of this widget's own build.
-    ref.listen<AsyncValue<List<_SectionOption>>>(_sectionFilterOptionsProvider,
-        (AsyncValue<List<_SectionOption>>? previous, AsyncValue<List<_SectionOption>> next) {
-      final List<_SectionOption>? sections = next.value;
-      if (sections == null) return; // still loading or errored — leave selection alone
-      final String? currentSectionId =
-          ref.read(adminQuizResultsFilterSelectionProvider).sectionId;
-      if (currentSectionId == null) return; // "All Sections" is always valid
-      final bool stillValid = sections.any((_SectionOption s) => s.id == currentSectionId);
-      if (!stillValid) {
-        ref
-            .read(adminQuizResultsFilterSelectionProvider.notifier)
-            .update((s) => s.withSectionId(null));
-      }
-    });
+    ref.listen<AsyncValue<List<_SectionOption>>>(
+      _sectionFilterOptionsProvider,
+      (
+        AsyncValue<List<_SectionOption>>? previous,
+        AsyncValue<List<_SectionOption>> next,
+      ) {
+        final List<_SectionOption>? sections = next.value;
+        if (sections == null) {
+          return; // still loading or errored — leave selection alone
+        }
+        final String? currentSectionId =
+            ref.read(adminQuizResultsFilterSelectionProvider).sectionId;
+        if (currentSectionId == null) return; // "All Sections" is always valid
+        final bool stillValid = sections.any(
+          (_SectionOption s) => s.id == currentSectionId,
+        );
+        if (!stillValid) {
+          ref
+              .read(adminQuizResultsFilterSelectionProvider.notifier)
+              .update((s) => s.withSectionId(null));
+        }
+      },
+    );
 
-    return AppCard(
-      header: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.filter_alt_outlined),
-          SizedBox(width: AppSpacing.xs),
-          Text('Filters'),
-        ],
+    final bool filtersActive = _hasActiveFilters(selection);
+    return Container(
+      key: const Key('quiz_results_filter_toolbar'),
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: AdultWorkspaceColors.border),
+          bottom: BorderSide(color: AdultWorkspaceColors.border),
+        ),
       ),
-      child: Wrap(
-        spacing: AppSpacing.md,
-        runSpacing: AppSpacing.sm,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          AppDropdown<GradeLevel>(
-            label: 'Grade Level',
-            width: 200,
-            options: <AppDropdownOption<GradeLevel>>[
-              const AppDropdownOption<GradeLevel>(value: null, label: 'All Grades'),
-              for (final GradeLevel g in GradeLevel.values)
-                AppDropdownOption<GradeLevel>(value: g, label: g.label),
-            ],
-            selected: selection.gradeLevel,
-            onChanged: (GradeLevel? value) =>
-                updateSelection((s) => s.withGradeLevel(value)),
-          ),
-          _SectionDropdown(selection: selection, onUpdate: updateSelection),
-          AppDropdown<AdminQuizResultsAssessmentTypeFilter>(
-            label: 'Assessment Type',
-            width: 200,
-            options: <AppDropdownOption<AdminQuizResultsAssessmentTypeFilter>>[
-              for (final AdminQuizResultsAssessmentTypeFilter f
-                  in AdminQuizResultsAssessmentTypeFilter.values)
-                AppDropdownOption<AdminQuizResultsAssessmentTypeFilter>(value: f, label: f.label),
-            ],
-            selected: selection.assessmentTypeFilter,
-            onChanged: (AdminQuizResultsAssessmentTypeFilter? value) => updateSelection(
-              (s) => s.withAssessmentTypeFilter(value ?? AdminQuizResultsAssessmentTypeFilter.all),
+          Text(
+            'Filter assessment results',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: AdultWorkspaceColors.ink,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          _SchoolYearDropdown(selection: selection, onUpdate: updateSelection),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              const double spacing = 10;
+              const double clearWidth = 116;
+              final bool singleRow = constraints.maxWidth >= 880;
+              final int columns = constraints.maxWidth >= 520 ? 2 : 1;
+              final double fieldWidth =
+                  singleRow
+                      ? (constraints.maxWidth - clearWidth - spacing * 4) / 4
+                      : (constraints.maxWidth - spacing * (columns - 1)) /
+                          columns;
+
+              final List<Widget> controls = <Widget>[
+                AppDropdown<GradeLevel>(
+                  key: const Key('quiz_results_grade_filter'),
+                  label: 'Grade Level',
+                  width: fieldWidth,
+                  size: AppComponentSize.small,
+                  options: <AppDropdownOption<GradeLevel>>[
+                    const AppDropdownOption<GradeLevel>(
+                      value: null,
+                      label: 'All Grades',
+                    ),
+                    for (final GradeLevel g in GradeLevel.values)
+                      AppDropdownOption<GradeLevel>(value: g, label: g.label),
+                  ],
+                  selected: selection.gradeLevel,
+                  onChanged:
+                      (GradeLevel? value) => updateSelection(
+                        (AdminQuizResultsFilterSelection current) =>
+                            current.withGradeLevel(value),
+                      ),
+                ),
+                _SectionDropdown(
+                  selection: selection,
+                  onUpdate: updateSelection,
+                  width: fieldWidth,
+                ),
+                AppDropdown<AdminQuizResultsAssessmentTypeFilter>(
+                  key: const Key('quiz_results_assessment_filter'),
+                  label: 'Assessment Type',
+                  width: fieldWidth,
+                  size: AppComponentSize.small,
+                  options: <
+                    AppDropdownOption<AdminQuizResultsAssessmentTypeFilter>
+                  >[
+                    for (final AdminQuizResultsAssessmentTypeFilter filter
+                        in AdminQuizResultsAssessmentTypeFilter.values)
+                      AppDropdownOption<AdminQuizResultsAssessmentTypeFilter>(
+                        value: filter,
+                        label: filter.label,
+                      ),
+                  ],
+                  selected: selection.assessmentTypeFilter,
+                  onChanged:
+                      (AdminQuizResultsAssessmentTypeFilter? value) =>
+                          updateSelection(
+                            (AdminQuizResultsFilterSelection current) =>
+                                current.withAssessmentTypeFilter(
+                                  value ??
+                                      AdminQuizResultsAssessmentTypeFilter.all,
+                                ),
+                          ),
+                ),
+                _SchoolYearDropdown(
+                  selection: selection,
+                  onUpdate: updateSelection,
+                  width: fieldWidth,
+                ),
+              ];
+              final Widget clearButton = SizedBox(
+                width: clearWidth,
+                child: TextButton(
+                  key: const Key('quiz_results_clear_filters'),
+                  onPressed:
+                      filtersActive
+                          ? () => updateSelection(
+                            (_) => const AdminQuizResultsFilterSelection(),
+                          )
+                          : null,
+                  child: const Text('Clear filters'),
+                ),
+              );
+
+              if (singleRow) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: <Widget>[
+                    for (int index = 0; index < controls.length; index++) ...[
+                      controls[index],
+                      const SizedBox(width: spacing),
+                    ],
+                    clearButton,
+                  ],
+                );
+              }
+
+              return Wrap(
+                spacing: spacing,
+                runSpacing: AppSpacing.sm,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[...controls, clearButton],
+              );
+            },
+          ),
         ],
       ),
     );
   }
 }
 
-typedef _SelectionUpdater = void Function(
-  AdminQuizResultsFilterSelection Function(AdminQuizResultsFilterSelection) update,
-);
+typedef _SelectionUpdater =
+    void Function(
+      AdminQuizResultsFilterSelection Function(AdminQuizResultsFilterSelection)
+      update,
+    );
 
 class _SectionDropdown extends ConsumerWidget {
-  const _SectionDropdown({required this.selection, required this.onUpdate});
+  const _SectionDropdown({
+    required this.selection,
+    required this.onUpdate,
+    required this.width,
+  });
 
   final AdminQuizResultsFilterSelection selection;
   final _SelectionUpdater onUpdate;
+  final double width;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<_SectionOption>> optionsAsync =
-        ref.watch(_sectionFilterOptionsProvider);
-    final List<_SectionOption> sections = optionsAsync.value ?? const <_SectionOption>[];
+    final AsyncValue<List<_SectionOption>> optionsAsync = ref.watch(
+      _sectionFilterOptionsProvider,
+    );
+    final List<_SectionOption> sections =
+        optionsAsync.value ?? const <_SectionOption>[];
 
     return AppDropdown<String>(
       // AppDropdown wraps DropdownMenu, whose `initialSelection` is only
@@ -353,9 +538,12 @@ class _SectionDropdown extends ConsumerWidget {
       // key forces Flutter to tear down and recreate the dropdown
       // whenever sectionId changes — including a programmatic reset
       // back to null — so the displayed label can't go stale.
-      key: ValueKey<String?>(selection.sectionId),
+      key: ValueKey<String>(
+        'quiz_results_section_${selection.sectionId ?? 'all'}',
+      ),
       label: 'Section',
-      width: 200,
+      width: width,
+      size: AppComponentSize.small,
       enabled: !optionsAsync.isLoading,
       options: <AppDropdownOption<String>>[
         const AppDropdownOption<String>(value: null, label: 'All Sections'),
@@ -371,21 +559,29 @@ class _SectionDropdown extends ConsumerWidget {
 /// The mockup's "Date Range" dropdown — actually School Year underneath.
 /// See [_FilterCard]'s own doc comment for the label decision.
 class _SchoolYearDropdown extends ConsumerWidget {
-  const _SchoolYearDropdown({required this.selection, required this.onUpdate});
+  const _SchoolYearDropdown({
+    required this.selection,
+    required this.onUpdate,
+    required this.width,
+  });
 
   final AdminQuizResultsFilterSelection selection;
   final _SelectionUpdater onUpdate;
+  final double width;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<AdminSchoolYearOption>> yearsAsync =
-        ref.watch(adminQuizResultsSchoolYearsProvider);
+    final AsyncValue<List<AdminSchoolYearOption>> yearsAsync = ref.watch(
+      adminQuizResultsSchoolYearsProvider,
+    );
     final List<AdminSchoolYearOption> years =
         yearsAsync.value ?? const <AdminSchoolYearOption>[];
 
     return AppDropdown<String>(
+      key: const Key('quiz_results_date_filter'),
       label: 'Date Range',
-      width: 200,
+      width: width,
+      size: AppComponentSize.small,
       enabled: !yearsAsync.isLoading,
       options: <AppDropdownOption<String>>[
         const AppDropdownOption<String>(value: null, label: 'All Time'),
@@ -410,24 +606,54 @@ class _ResultsTable extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<AdminQuizResultRow>> resultsAsync =
-        ref.watch(adminQuizResultsProvider);
+    final AsyncValue<List<AdminQuizResultRow>> resultsAsync = ref.watch(
+      adminQuizResultsProvider,
+    );
+    final AdminQuizResultsFilterSelection selection = ref.watch(
+      adminQuizResultsFilterSelectionProvider,
+    );
 
     return resultsAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.all(AppSpacing.xl),
-        child: AppLoadingIndicator(),
-      ),
-      error: (error, _) => AppErrorState(
-        message: error is AppFailure ? error.message : 'Could not load quiz results.',
-        onRetry: () => ref.invalidate(adminQuizResultsProvider),
-      ),
+      loading:
+          () => const _ResultsStateSurface(
+            child: AppLoadingIndicator(message: 'Loading assessment results'),
+          ),
+      error:
+          (Object error, StackTrace stackTrace) => _ResultsStateSurface(
+            child: AppErrorState(
+              message:
+                  error is AppFailure
+                      ? error.message
+                      : 'Could not load quiz results.',
+              onRetry: () => ref.invalidate(adminQuizResultsProvider),
+            ),
+          ),
       data: (List<AdminQuizResultRow> rows) {
         if (rows.isEmpty) {
-          return const AppEmptyState(
-            icon: Icons.assignment_outlined,
-            title: 'No quiz results found',
-            description: 'Try adjusting the filters above.',
+          final bool filtersActive = _hasActiveFilters(selection);
+          return _ResultsStateSurface(
+            child: AppEmptyState(
+              icon: Icons.assignment_outlined,
+              title:
+                  filtersActive
+                      ? 'No results match your current filters'
+                      : 'No quiz results yet',
+              description:
+                  filtersActive
+                      ? 'Clear the filters or choose a different assessment context.'
+                      : 'Completed assessment results will appear here.',
+              actionLabel: filtersActive ? 'Clear filters' : null,
+              onAction:
+                  filtersActive
+                      ? () => ref
+                          .read(
+                            adminQuizResultsFilterSelectionProvider.notifier,
+                          )
+                          .update(
+                            (_) => const AdminQuizResultsFilterSelection(),
+                          )
+                      : null,
+            ),
           );
         }
         return _ResultsDataTable(rows: rows);
@@ -436,166 +662,415 @@ class _ResultsTable extends ConsumerWidget {
   }
 }
 
-/// The flat results grid: one header row of column labels, then one row
-/// per [AdminQuizResultRow]. Built as a plain [Table] — this codebase has
-/// no `DataTable`-based screen to match (see
-/// `teacher/presentation/quiz_results_screen.dart`'s own `_ResultsMatrix`
-/// doc comment: "this codebase has no `DataTable`-based screen to match,
-/// and the design notes say not to introduce one"), so the same plain-
-/// [Table] approach is reused here rather than introducing `DataTable` as
-/// a second grid pattern. Unlike that matrix (whose column count varies
-/// with the chosen quizzes), this table's six columns are fixed, so no
-/// extra horizontal [SingleChildScrollView] is needed.
+class _ResultsStateSurface extends StatelessWidget {
+  const _ResultsStateSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('quiz_results_state_surface'),
+      constraints: const BoxConstraints(minHeight: 270),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: AppRadius.largeAll,
+        border: Border.all(color: AdultWorkspaceColors.border),
+      ),
+      child: child,
+    );
+  }
+}
+
 class _ResultsDataTable extends StatelessWidget {
   const _ResultsDataTable({required this.rows});
 
   final List<AdminQuizResultRow> rows;
 
-  static const List<String> _headers = <String>[
-    'Student Name',
-    'Assessment Name',
-    'Score',
-    'Percentage',
-    'Date Taken',
-    'Status',
-  ];
-
-  static const Map<int, TableColumnWidth> _columnWidths = <int, TableColumnWidth>{
-    0: FlexColumnWidth(2),
-    1: FlexColumnWidth(2),
-    2: FlexColumnWidth(1),
-    3: FlexColumnWidth(1),
-    4: FlexColumnWidth(1.2),
-    5: FlexColumnWidth(1.3),
-  };
+  static const double _minimumTableWidth = 1080;
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final TextTheme textTheme = Theme.of(context).textTheme;
-    final TextStyle? headerStyle = textTheme.labelLarge?.copyWith(
-      color: colorScheme.onSurfaceVariant,
-      fontWeight: FontWeight.w600,
-    );
-
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Table(
-        columnWidths: _columnWidths,
-        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-        children: <TableRow>[
-          TableRow(
-            decoration: BoxDecoration(color: colorScheme.surfaceContainerHighest),
-            children: <Widget>[
-              for (final String h in _headers) _TableCell(child: Text(h, style: headerStyle)),
-            ],
+    return Container(
+      key: const Key('quiz_results_directory'),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: AppRadius.mediumAll,
+        border: Border.all(color: AdultWorkspaceColors.border),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: AdultWorkspaceColors.navy.withValues(alpha: 0.025),
+            offset: const Offset(0, 3),
+            blurRadius: 10,
           ),
-          for (final AdminQuizResultRow row in rows)
-            TableRow(
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
-              ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: 13,
+            ),
+            child: Row(
               children: <Widget>[
-                _TableCell(
-                  alignment: Alignment.centerLeft,
-                  child: Text(row.studentName, style: textTheme.bodyMedium),
+                Expanded(
+                  child: Text(
+                    'Assessment Results',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: AdultWorkspaceColors.ink,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-                _TableCell(
-                  alignment: Alignment.centerLeft,
-                  child: Text(row.assessmentName, style: textTheme.bodyMedium),
-                ),
-                _TableCell(
-                  alignment: Alignment.centerLeft,
-                  child: Text(_scoreLabel(row), style: textTheme.bodyMedium),
-                ),
-                _TableCell(
-                  alignment: Alignment.centerLeft,
-                  child: Text(formatPercent(row.percentage), style: textTheme.bodyMedium),
-                ),
-                _TableCell(
-                  alignment: Alignment.centerLeft,
-                  child: Text(_dateLabel(row.dateTaken), style: textTheme.bodyMedium),
-                ),
-                _TableCell(
-                  alignment: Alignment.centerLeft,
-                  child: _StatusPill(status: row.status, percentage: row.percentage),
+                Text(
+                  '${rows.length} ${rows.length == 1 ? 'result' : 'results'}',
+                  key: const Key('quiz_results_count'),
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: AdultWorkspaceColors.primaryMuted,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
+          ),
+          const Divider(height: 1, color: AdultWorkspaceColors.border),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double tableWidth =
+                  constraints.maxWidth < _minimumTableWidth
+                      ? _minimumTableWidth
+                      : constraints.maxWidth;
+              return SingleChildScrollView(
+                key: const Key('quiz_results_table_scroll'),
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: tableWidth,
+                  child: Semantics(
+                    container: true,
+                    label:
+                        'Assessment results table with ${rows.length} ${rows.length == 1 ? 'row' : 'rows'}',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        const _ResultsTableHeader(),
+                        for (int index = 0; index < rows.length; index++)
+                          _ResultRow(
+                            key: Key(
+                              'quiz_result_row_${rows[index].quizAttemptId}',
+                            ),
+                            row: rows[index],
+                            showDivider: index != rows.length - 1,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
   }
-
-  /// `'18/25'` style, matching the mockup — the raw score against the
-  /// item count, not a recomputed fraction. `'—'` if either half is
-  /// missing (see [AdminQuizResultRow.score]/`.totalQuestions`'s own doc
-  /// comments for when that happens).
-  String _scoreLabel(AdminQuizResultRow row) {
-    final num? score = row.score;
-    final int? total = row.totalQuestions;
-    if (score == null || total == null) return '—';
-    final String scoreText =
-        score == score.roundToDouble() ? score.toInt().toString() : score.toString();
-    return '$scoreText/$total';
-  }
-
-  /// `'YYYY-MM-DD'`, matching the mockup. No `intl` dependency in this
-  /// project's `pubspec.yaml`, so formatted by hand rather than adding
-  /// one for a single date column.
-  String _dateLabel(DateTime date) {
-    final String y = date.year.toString().padLeft(4, '0');
-    final String m = date.month.toString().padLeft(2, '0');
-    final String d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
 }
 
-class _TableCell extends StatelessWidget {
-  const _TableCell({required this.child, this.alignment = Alignment.center});
+const Map<int, TableColumnWidth> _resultColumnWidths = <int, TableColumnWidth>{
+  0: FixedColumnWidth(230),
+  1: FlexColumnWidth(1),
+  2: FixedColumnWidth(105),
+  3: FixedColumnWidth(125),
+  4: FixedColumnWidth(140),
+  5: FixedColumnWidth(155),
+};
 
-  final Widget child;
-  final Alignment alignment;
+class _ResultsTableHeader extends StatelessWidget {
+  const _ResultsTableHeader();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      child: Align(alignment: alignment, child: child),
+    return Container(
+      color: AdultWorkspaceColors.fieldFill,
+      child: Table(
+        key: const Key('quiz_results_table_header'),
+        columnWidths: _resultColumnWidths,
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        children: const <TableRow>[
+          TableRow(
+            children: <Widget>[
+              _TableHeaderCell('Student Name'),
+              _TableHeaderCell('Assessment Name'),
+              _TableHeaderCell('Score'),
+              _TableHeaderCell('Percentage'),
+              _TableHeaderCell('Date Taken'),
+              _TableHeaderCell('Status'),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// `'Passed'` / `'Needs Improvement'` status pill. Colored by a three-tier
-/// severity computed from [percentage] at render time — success (>=70),
-/// warning (50-69), error (<50) — rather than the two-value `status`
-/// field alone, and rather than the mockup's own flat neutral-gray pill
-/// for both states (flagged as a judgment call in this phase's earlier
-/// summary notes; the written spec calls for a "colored pill" but the
-/// attached mockup image itself renders both states in the same gray).
-/// [AdminQuizResultStatus] itself stays exactly the two DB-computed
-/// values ('passed'/'needs_improvement') — only this pill's color gets
-/// the third tier. A `null` [status] (the documented edge case on that
-/// field) renders as a plain dash, never a badge.
+class _TableHeaderCell extends StatelessWidget {
+  const _TableHeaderCell(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      child: Text(
+        label,
+        maxLines: 1,
+        style: const TextStyle(
+          color: AdultWorkspaceColors.secondaryText,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.35,
+        ),
+      ),
+    );
+  }
+}
+
+class _ResultRow extends StatelessWidget {
+  const _ResultRow({super.key, required this.row, required this.showDivider});
+
+  final AdminQuizResultRow row;
+  final bool showDivider;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ResultRowHoverSurface(
+      child: Container(
+        decoration: BoxDecoration(
+          border:
+              showDivider
+                  ? const Border(
+                    bottom: BorderSide(color: AdultWorkspaceColors.border),
+                  )
+                  : null,
+        ),
+        child: Table(
+          columnWidths: _resultColumnWidths,
+          defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+          children: <TableRow>[
+            TableRow(
+              children: <Widget>[
+                _TableDataCell(child: _StudentNameCell(name: row.studentName)),
+                _TableDataCell(
+                  child: Tooltip(
+                    message: row.assessmentName,
+                    child: Text(
+                      row.assessmentName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AdultWorkspaceColors.ink,
+                        fontWeight: FontWeight.w500,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ),
+                _TableDataCell(child: _ResultValue(_scoreLabel(row))),
+                _TableDataCell(
+                  child: _ResultValue(formatPercent(row.percentage)),
+                ),
+                _TableDataCell(child: _ResultValue(_dateLabel(row.dateTaken))),
+                _TableDataCell(child: _StatusPill(status: row.status)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TableDataCell extends StatelessWidget {
+  const _TableDataCell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Align(alignment: Alignment.centerLeft, child: child),
+    );
+  }
+}
+
+class _StudentNameCell extends StatelessWidget {
+  const _StudentNameCell({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Container(
+          width: 28,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: AdultWorkspaceColors.softBlue,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            _initials(name),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: AdultWorkspaceColors.navy,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AdultWorkspaceColors.ink,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _initials(String fullName) {
+    final List<String> parts =
+        fullName
+            .trim()
+            .split(RegExp(r'\s+'))
+            .where((String part) => part.isNotEmpty)
+            .toList();
+    if (parts.isEmpty) return '';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+    return (parts.first.substring(0, 1) + parts.last.substring(0, 1))
+        .toUpperCase();
+  }
+}
+
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.status, required this.percentage});
+  const _StatusPill({required this.status});
 
   final AdminQuizResultStatus? status;
-  final double? percentage;
 
   @override
   Widget build(BuildContext context) {
     final AdminQuizResultStatus? s = status;
     if (s == null) return const Text('—');
-    // status is null only in the same edge case percentage is (see
-    // AdminQuizResultRow's own doc comment on both fields) — so a
-    // non-null status here guarantees a non-null percentage too.
-    return AppBadge(label: s.label, variant: _variantFor(percentage!));
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final AppSemanticColors? semantic =
+        Theme.of(context).extension<AppSemanticColors>();
+    final bool passed = s == AdminQuizResultStatus.passed;
+    return Semantics(
+      label: 'Status: ${s.label}',
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
+        ),
+        decoration: BoxDecoration(
+          color:
+              passed
+                  ? semantic?.successContainer ?? colorScheme.secondaryContainer
+                  : colorScheme.errorContainer,
+          borderRadius: AppRadius.smallAll,
+        ),
+        child: Text(
+          s.label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color:
+                passed
+                    ? semantic?.onSuccessContainer ??
+                        colorScheme.onSecondaryContainer
+                    : colorScheme.onErrorContainer,
+          ),
+        ),
+      ),
+    );
   }
+}
 
-  AppBadgeVariant _variantFor(double percentage) {
-    if (percentage >= 70) return AppBadgeVariant.success;
-    if (percentage >= 50) return AppBadgeVariant.warning;
-    return AppBadgeVariant.error;
+class _ResultValue extends StatelessWidget {
+  const _ResultValue(this.value);
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      value,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        color:
+            value == '—'
+                ? AdultWorkspaceColors.secondaryText
+                : AdultWorkspaceColors.ink,
+        fontWeight: FontWeight.w500,
+        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+      ),
+    );
   }
+}
+
+class _ResultRowHoverSurface extends StatefulWidget {
+  const _ResultRowHoverSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_ResultRowHoverSurface> createState() => _ResultRowHoverSurfaceState();
+}
+
+class _ResultRowHoverSurfaceState extends State<_ResultRowHoverSurface> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        color:
+            _hovered
+                ? AdultWorkspaceColors.paleBlue.withValues(alpha: 0.72)
+                : Colors.transparent,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+String _scoreLabel(AdminQuizResultRow row) {
+  final num? score = row.score;
+  final int? total = row.totalQuestions;
+  if (score == null || total == null) return '—';
+  final String scoreText =
+      score == score.roundToDouble()
+          ? score.toInt().toString()
+          : score.toString();
+  return '$scoreText/$total';
+}
+
+String _dateLabel(DateTime date) {
+  final String year = date.year.toString().padLeft(4, '0');
+  final String month = date.month.toString().padLeft(2, '0');
+  final String day = date.day.toString().padLeft(2, '0');
+  return '$year-$month-$day';
 }
