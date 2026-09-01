@@ -27,7 +27,7 @@ dependencies:
   # Flutter chart package.
   fl_chart: ^0.69.2
   # --- Teacher Quiz Results: CSV export (Save As dialog + CSV encoding) ---
-  file_picker: ^8.1.2
+  file_picker: ^10.3.10
   csv: ^6.0.0
   # --- Bulk Add Students: .xlsx paste-import file picker. `csv` (above)
   # already covers the .csv side of this same feature and is reused as-is;

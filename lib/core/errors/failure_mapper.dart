@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app_failure.dart';
@@ -10,12 +11,34 @@ import 'app_failure.dart';
 AppFailure mapExceptionToFailure(Object error) {
   if (error is AppFailure) return error;
 
+  _logExceptionForDebugging(error);
+
   if (error is AuthException) return _mapAuthException(error);
   if (error is PostgrestException) return _mapPostgrestException(error);
   if (error is FunctionException) return _mapFunctionException(error);
   if (error is SocketException) return const NetworkFailure();
 
   return const ServerFailure();
+}
+
+/// Records enough information to diagnose transport failures in development
+/// without logging request bodies, credentials, tokens, or server responses.
+void _logExceptionForDebugging(Object error) {
+  if (!kDebugMode) return;
+
+  if (error is SocketException) {
+    final OSError? osError = error.osError;
+    final String osDetails =
+        osError == null
+            ? ''
+            : ' (${osError.message}, OS code ${osError.errorCode})';
+    debugPrint(
+      '[BayMath] Network request failed: ${error.runtimeType}$osDetails',
+    );
+    return;
+  }
+
+  debugPrint('[BayMath] Request failed: ${error.runtimeType}');
 }
 
 /// Maps errors from `supabase.functions.invoke(...)` (the
@@ -44,7 +67,9 @@ AppFailure _mapFunctionException(FunctionException error) {
   final String? message = _extractFunctionErrorMessage(error);
 
   if (code == 'invalid_credentials' || code == 'validation_error') {
-    return ValidationFailure(message ?? 'Please check the values you entered and try again.');
+    return ValidationFailure(
+      message ?? 'Please check the values you entered and try again.',
+    );
   }
 
   switch (error.status) {
@@ -57,21 +82,29 @@ AppFailure _mapFunctionException(FunctionException error) {
     case 400:
     case 409:
     case 422:
-      return ValidationFailure(message ?? 'Please check the values you entered and try again.');
+      return ValidationFailure(
+        message ?? 'Please check the values you entered and try again.',
+      );
     default:
-      return ServerFailure(message ?? 'Something went wrong. Please try again.');
+      return ServerFailure(
+        message ?? 'Something went wrong. Please try again.',
+      );
   }
 }
 
 String? _extractFunctionErrorCode(FunctionException error) {
   final Object? details = error.details;
-  if (details is Map && details['code'] is String) return details['code'] as String;
+  if (details is Map && details['code'] is String) {
+    return details['code'] as String;
+  }
   return null;
 }
 
 String? _extractFunctionErrorMessage(FunctionException error) {
   final Object? details = error.details;
-  if (details is Map && details['message'] is String) return details['message'] as String;
+  if (details is Map && details['message'] is String) {
+    return details['message'] as String;
+  }
   if (details is String && details.isNotEmpty) return details;
   return null;
 }
@@ -87,7 +120,9 @@ AppFailure _mapAuthException(AuthException error) {
       message.contains('user already registered')) {
     return const ValidationFailure('That email is already registered.');
   }
-  if (error.statusCode == '401' || message.contains('expired') || message.contains('invalid jwt')) {
+  if (error.statusCode == '401' ||
+      message.contains('expired') ||
+      message.contains('invalid jwt')) {
     return const SessionExpiredFailure();
   }
 

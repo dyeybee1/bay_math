@@ -1,8 +1,7 @@
 /// Centralized route path constants.
 ///
-/// Phase 1 scope: Teacher/Admin auth + app shell. Student routes are
-/// reserved for Phase 3+ and are not added here yet — adding them then is a
-/// pure addition, not a change to anything below.
+/// Both native variants share these route definitions. [app_router.dart]
+/// selects and guards the appropriate route family at startup.
 class AppRoutes {
   const AppRoutes._();
 
@@ -18,11 +17,9 @@ class AppRoutes {
   static const String adminHome = '/admin';
 
   // --- Student (custom-JWT, not Supabase Auth — Phase 4 §2/§6) ---
-  // Deliberately NOT gated by the sessionProvider redirect switch in
-  // app_router.dart (that switch tracks Supabase Auth's own
-  // Teacher/Admin session; a student session is a separate, in-memory-only
-  // concept for now — see student_session_provider.dart). Reachable
-  // directly, proof-of-concept only, per the phase's own scope note.
+  // Student sessions remain separate from Supabase Auth and in-memory only
+  // (see student_session_provider.dart). The Student app variant guards this
+  // route family independently from the staff session/role redirect.
   static const String studentLogin = '/student-login';
   static const String studentHome = '/student-home';
 
