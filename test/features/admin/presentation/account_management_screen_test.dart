@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,7 @@ import 'package:instructional_math_app/core/models/section.dart';
 import 'package:instructional_math_app/core/models/student.dart';
 import 'package:instructional_math_app/core/models/teacher_section.dart';
 import 'package:instructional_math_app/core/providers/supabase_providers.dart';
+import 'package:instructional_math_app/core/repositories/profiles_repository.dart';
 import 'package:instructional_math_app/core/repositories/sections_repository.dart';
 import 'package:instructional_math_app/core/repositories/students_repository.dart';
 import 'package:instructional_math_app/core/repositories/teacher_sections_repository.dart';
@@ -68,6 +70,14 @@ void main() {
       expect(find.text('Archived Student'), findsNothing);
       expect(find.text('Approved'), findsOneWidget);
       expect(find.text('Active'), findsAtLeastNWidgets(2));
+      expect(
+        find.byKey(const Key('delete_account_teacher-active')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('delete_account_student-active')),
+        findsNothing,
+      );
 
       final Finder activeTeacher = find.byKey(
         const Key('account_row_teacher-active'),
@@ -91,8 +101,94 @@ void main() {
       expect(find.text('Archived Teacher'), findsOneWidget);
       expect(find.text('Archived Student'), findsOneWidget);
       expect(find.text('Restore'), findsNWidgets(2));
+      expect(find.text('Delete permanently'), findsNWidgets(2));
       expect(find.text('Archived'), findsAtLeastNWidgets(3));
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('restore and permanent Teacher deletion use account backends', (
+      WidgetTester tester,
+    ) async {
+      final _FakeProfilesRepository profiles = _FakeProfilesRepository(
+        List<Profile>.of(_teachers),
+      );
+      await tester.pumpWidget(
+        _testApp(
+          profilesRepository: profiles,
+          teachersOverride: (Ref ref) => profiles.teachers,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('accounts_status_archived')));
+      await tester.pumpAndSettle();
+
+      final Finder restore = find.descendant(
+        of: find.byKey(const Key('account_row_teacher-archived')),
+        matching: find.text('Restore'),
+      );
+      await tester.ensureVisible(restore);
+      await tester.tap(restore);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Restore').last);
+      await tester.pumpAndSettle();
+      expect(profiles.restoredIds, <String>['teacher-archived']);
+      expect(find.text('Archived Teacher'), findsNothing);
+
+      profiles.archiveForTest('teacher-archived');
+      await tester.pumpWidget(
+        _testApp(
+          scopeKey: const ValueKey<String>('teacher-delete'),
+          profilesRepository: profiles,
+          teachersOverride: (Ref ref) => profiles.teachers,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('accounts_status_archived')));
+      await tester.pumpAndSettle();
+
+      final Finder delete = find.byKey(
+        const Key('delete_account_teacher-archived'),
+      );
+      await tester.ensureVisible(delete);
+      await tester.tap(delete);
+      await tester.pumpAndSettle();
+      expect(find.text('Delete this account permanently?'), findsOneWidget);
+      await tester.tap(find.text('Delete permanently').last);
+      await tester.pumpAndSettle();
+
+      expect(profiles.deletedIds, <String>['teacher-archived']);
+      expect(find.text('Archived Teacher'), findsNothing);
+      expect(find.text('Archived Student'), findsOneWidget);
+    });
+
+    testWidgets('permanent Student deletion leaves unrelated accounts', (
+      WidgetTester tester,
+    ) async {
+      final _FakeStudentsRepository students = _FakeStudentsRepository(
+        List<StudentWithSection>.of(_students),
+      );
+      await tester.pumpWidget(
+        _testApp(
+          studentsRepository: students,
+          studentsOverride: (Ref ref) => students.students,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('accounts_status_archived')));
+      await tester.pumpAndSettle();
+
+      final Finder delete = find.byKey(
+        const Key('delete_account_student-archived'),
+      );
+      await tester.ensureVisible(delete);
+      await tester.tap(delete);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete permanently').last);
+      await tester.pumpAndSettle();
+
+      expect(students.deletedIds, <String>['student-archived']);
+      expect(find.text('Archived Student'), findsNothing);
+      expect(find.text('Archived Teacher'), findsOneWidget);
     });
 
     testWidgets('search no-results state can clear active filters', (
@@ -143,7 +239,7 @@ void main() {
       await tester.tap(find.byKey(const Key('accounts_status_archived')));
       await tester.pumpAndSettle();
 
-      expect(find.text('No archived accounts yet'), findsOneWidget);
+      expect(find.text('No archived accounts.'), findsOneWidget);
       expect(
         find.text('Accounts you archive will appear here for recovery.'),
         findsOneWidget,
@@ -200,6 +296,64 @@ void main() {
       expect(find.text('0'), findsAtLeastNWidgets(4));
       expect(tester.takeException(), isNull);
     });
+
+    test(
+      'providers request separate active and archived backend scopes',
+      () async {
+        final _FakeProfilesRepository profiles = _FakeProfilesRepository(
+          List<Profile>.of(_teachers),
+        );
+        final _FakeStudentsRepository students = _FakeStudentsRepository(
+          List<StudentWithSection>.of(_students),
+        );
+        final ProviderContainer container = ProviderContainer(
+          overrides: [
+            profilesRepositoryProvider.overrideWithValue(profiles),
+            studentsRepositoryProvider.overrideWithValue(students),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        await container.read(adminAccountsTeachersProvider.future);
+        await container.read(adminAccountsStudentsProvider.future);
+
+        expect(profiles.nonArchivedFetches, 1);
+        expect(profiles.statusFetches, <ProfileStatus>[ProfileStatus.archived]);
+        expect(students.statusFetches, <StudentStatus>[
+          StudentStatus.active,
+          StudentStatus.archived,
+        ]);
+      },
+    );
+
+    test('Teacher Auth deletion keeps the service role server-side', () {
+      final Iterable<File> flutterSources = Directory('lib')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File file) => file.path.endsWith('.dart'));
+      for (final File source in flutterSources) {
+        expect(
+          source.readAsStringSync(),
+          isNot(contains('SUPABASE_SERVICE_ROLE_KEY')),
+          reason: '${source.path} must not contain the service-role key name.',
+        );
+      }
+
+      final String edgeFunction =
+          File(
+            'supabase/functions/delete-teacher-account/index.ts',
+          ).readAsStringSync();
+      final int eligibilityCheck = edgeFunction.indexOf(
+        '.rpc("teacher_account_delete_eligibility"',
+      );
+      final int authAdminDelete = edgeFunction.indexOf('auth.admin.deleteUser');
+      expect(eligibilityCheck, greaterThanOrEqualTo(0));
+      expect(authAdminDelete, greaterThan(eligibilityCheck));
+      expect(
+        edgeFunction,
+        contains('Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")'),
+      );
+    });
   });
 }
 
@@ -207,6 +361,8 @@ Widget _testApp({
   Key? scopeKey,
   FutureOr<List<Profile>> Function(Ref ref)? teachersOverride,
   FutureOr<List<StudentWithSection>> Function(Ref ref)? studentsOverride,
+  ProfilesRepository? profilesRepository,
+  StudentsRepository? studentsRepository,
 }) {
   return ProviderScope(
     key: scopeKey,
@@ -224,6 +380,10 @@ Widget _testApp({
       sectionsRepositoryProvider.overrideWithValue(
         _FakeSectionsRepository(_sections),
       ),
+      if (profilesRepository != null)
+        profilesRepositoryProvider.overrideWithValue(profilesRepository),
+      if (studentsRepository != null)
+        studentsRepositoryProvider.overrideWithValue(studentsRepository),
     ],
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -350,4 +510,93 @@ class _FakeSectionsRepository extends SectionsRepository {
   @override
   Future<List<Section>> fetchByIds(List<String> ids) async =>
       sections.where((Section section) => ids.contains(section.id)).toList();
+}
+
+class _FakeProfilesRepository extends ProfilesRepository {
+  _FakeProfilesRepository(this.teachers) : super(_testClient);
+
+  final List<Profile> teachers;
+  final List<String> restoredIds = <String>[];
+  final List<String> deletedIds = <String>[];
+  final List<ProfileStatus> statusFetches = <ProfileStatus>[];
+  int nonArchivedFetches = 0;
+
+  @override
+  Future<List<Profile>> fetchNonArchivedTeachers() async {
+    nonArchivedFetches++;
+    return teachers
+        .where((Profile profile) => profile.status != ProfileStatus.archived)
+        .toList();
+  }
+
+  @override
+  Future<List<Profile>> fetchTeachers({ProfileStatus? status}) async {
+    if (status != null) statusFetches.add(status);
+    return teachers
+        .where((Profile profile) => status == null || profile.status == status)
+        .toList();
+  }
+
+  @override
+  Future<void> restoreTeacher(String teacherId) async {
+    restoredIds.add(teacherId);
+    _replaceStatus(teacherId, ProfileStatus.approved);
+  }
+
+  @override
+  Future<void> deleteTeacherPermanently(String teacherId) async {
+    deletedIds.add(teacherId);
+    teachers.removeWhere((Profile profile) => profile.id == teacherId);
+  }
+
+  void archiveForTest(String teacherId) {
+    _replaceStatus(teacherId, ProfileStatus.archived);
+  }
+
+  void _replaceStatus(String teacherId, ProfileStatus status) {
+    final int index = teachers.indexWhere(
+      (Profile profile) => profile.id == teacherId,
+    );
+    final Profile profile = teachers[index];
+    teachers[index] = Profile(
+      id: profile.id,
+      role: profile.role,
+      status: status,
+      fullName: profile.fullName,
+      email: profile.email,
+      approvedBy: profile.approvedBy,
+      approvedAt: profile.approvedAt,
+      createdAt: profile.createdAt,
+      updatedAt: _now,
+    );
+  }
+}
+
+class _FakeStudentsRepository extends StudentsRepository {
+  _FakeStudentsRepository(this.students) : super(_testClient);
+
+  final List<StudentWithSection> students;
+  final List<String> deletedIds = <String>[];
+  final List<StudentStatus> statusFetches = <StudentStatus>[];
+
+  @override
+  Future<List<StudentWithSection>> fetchAllWithSection({
+    StudentStatus? status,
+  }) async {
+    if (status != null) statusFetches.add(status);
+    return students
+        .where(
+          (StudentWithSection value) =>
+              status == null || value.student.status == status,
+        )
+        .toList();
+  }
+
+  @override
+  Future<void> deleteStudentPermanently(String studentId) async {
+    deletedIds.add(studentId);
+    students.removeWhere(
+      (StudentWithSection value) => value.student.id == studentId,
+    );
+  }
 }

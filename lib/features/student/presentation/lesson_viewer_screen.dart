@@ -16,6 +16,8 @@ import '../../../core/repositories/lesson_progress_repository.dart';
 import '../../../core/repositories/lessons_repository.dart';
 import '../../../core/repositories/quizzes_repository.dart';
 import '../../../core/widgets/widgets.dart';
+import '../../../core/widgets/lesson/lesson_content_block_view.dart';
+import '../data/student_statistics_providers.dart';
 import 'quiz_taking_screen.dart';
 import 'worked_example_panel.dart';
 
@@ -74,6 +76,42 @@ _SectionPresentation _presentationFor(String? sectionType) {
       icon: Icons.task_alt_rounded,
       color: _LessonViewerPalette.summary,
       containerColor: _LessonViewerPalette.summaryContainer,
+    ),
+    'composer_heading' => const _SectionPresentation(
+      label: 'Lesson heading',
+      icon: Icons.title_rounded,
+      color: AppColors.primary,
+      containerColor: AppColors.primaryContainer,
+    ),
+    'composer_paragraph' => const _SectionPresentation(
+      label: 'Lesson explanation',
+      icon: Icons.notes_rounded,
+      color: _LessonViewerPalette.explanation,
+      containerColor: _LessonViewerPalette.explanationContainer,
+    ),
+    'composer_image' => const _SectionPresentation(
+      label: 'Lesson image',
+      icon: Icons.image_outlined,
+      color: _LessonViewerPalette.vocabulary,
+      containerColor: _LessonViewerPalette.vocabularyContainer,
+    ),
+    'composer_key_idea' => const _SectionPresentation(
+      label: 'Key idea',
+      icon: Icons.lightbulb_rounded,
+      color: _LessonViewerPalette.vocabulary,
+      containerColor: _LessonViewerPalette.vocabularyContainer,
+    ),
+    'composer_worked_example' => const _SectionPresentation(
+      label: 'Worked example',
+      icon: Icons.calculate_rounded,
+      color: AppColors.tertiary,
+      containerColor: AppColors.tertiaryContainer,
+    ),
+    'composer_link' => const _SectionPresentation(
+      label: 'Learning resource',
+      icon: Icons.link_rounded,
+      color: AppColors.primary,
+      containerColor: AppColors.primaryContainer,
     ),
     _ => const _SectionPresentation(
       label: 'Lesson note',
@@ -157,10 +195,11 @@ class _LessonViewerScreenState extends ConsumerState<LessonViewerScreen> {
     );
     if (session == null || repo == null) return;
 
-    repo.markCompleted(
-      studentId: session.studentId,
-      lessonId: widget.lesson.id,
-    );
+    repo
+        .markCompleted(studentId: session.studentId, lessonId: widget.lesson.id)
+        .then((_) {
+          if (mounted) ref.invalidate(studentStatisticsProvider);
+        });
   }
 
   void _goToPage(int index) {
@@ -278,7 +317,9 @@ class _LessonViewerScreenState extends ConsumerState<LessonViewerScreen> {
                           _LessonPageFooter(
                             currentIndex: _currentIndex,
                             pageCount: pages.length,
-                            currentTitle: pages[_currentIndex].title,
+                            currentTitle: lessonPageNavigationLabel(
+                              pages[_currentIndex],
+                            ),
                             onPrevious: () => _goToPage(_currentIndex - 1),
                             onNext: () => _goToPage(_currentIndex + 1),
                             onFinish: () => Navigator.of(context).pop(),
@@ -527,6 +568,41 @@ class _LessonPageSlide extends StatelessWidget {
         final double verticalPadding = isShort ? AppSpacing.sm : AppSpacing.md;
         final double minContentHeight =
             constraints.maxHeight - (verticalPadding * 2);
+
+        if (isComposerLessonPage(page)) {
+          return SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: minContentHeight > 0 ? minContentHeight : 0,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Semantics(
+                    container: true,
+                    label:
+                        '${presentation.label}. Step ${pageIndex + 1} of $pageCount.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        LessonContentBlockView(page: page, compact: isShort),
+                        if (trailing != null) ...<Widget>[
+                          const SizedBox(height: AppSpacing.lg),
+                          trailing!,
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
 
         return SingleChildScrollView(
           padding: EdgeInsets.symmetric(
@@ -1154,7 +1230,7 @@ class _OutlineDrawer extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    pages[index].title,
+                                    lessonPageNavigationLabel(pages[index]),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: GoogleFonts.inter(

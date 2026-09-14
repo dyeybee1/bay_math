@@ -24,39 +24,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1280, 720);
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          studentSessionProvider.overrideWith(
-            (Ref ref) => StudentSession(
-              accessToken: 'test-token',
-              expiresAt: DateTime.utc(2027),
-              studentId: 'student-1',
-            ),
-          ),
-          ownStudentProfileProvider.overrideWith(
-            (Ref ref) => Future<Student?>.value(_student),
-          ),
-          ownStudentGradeLevelProvider.overrideWith(
-            (Ref ref) => Future<GradeLevel?>.value(GradeLevel.grade4),
-          ),
-          studentVisibleLessonsProvider.overrideWith(
-            (Ref ref) => Future<List<Lesson>>.value(_lessonsWithDuplicate),
-          ),
-          studentVisibleQuizzesProvider.overrideWith(
-            (Ref ref) => Future<List<Quiz>>.value(_quizzesWithDuplicate),
-          ),
-        ],
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.light,
-          home: const StudentHomeScreen(),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
+    await _pumpHome(tester, const Size(1280, 720));
 
     expect(find.text('10 lessons'), findsOneWidget);
     expect(find.text('13 assessments'), findsOneWidget);
@@ -64,6 +32,88 @@ void main() {
     expect(find.text('14 assessments'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Home uses a touch-friendly 2x2 grid and account menu', (
+    WidgetTester tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    await _pumpHome(tester, const Size(1024, 600));
+
+    final Rect lessons = tester.getRect(
+      find.byKey(const ValueKey<String>('student-home-card-Lessons')),
+    );
+    final Rect quizzes = tester.getRect(
+      find.byKey(const ValueKey<String>('student-home-card-Quizzes')),
+    );
+    final Rect statistics = tester.getRect(
+      find.byKey(const ValueKey<String>('student-home-card-Statistics')),
+    );
+    final Rect endless = tester.getRect(
+      find.byKey(const ValueKey<String>('student-home-card-Endless Quiz')),
+    );
+
+    expect(lessons.top, closeTo(quizzes.top, 1));
+    expect(statistics.top, closeTo(endless.top, 1));
+    expect(lessons.left, lessThan(quizzes.left));
+    expect(statistics.left, lessThan(endless.left));
+    expect(lessons.top, lessThan(statistics.top));
+    expect(lessons.width, greaterThan(450));
+    expect(lessons.height, greaterThan(180));
+    expect(find.text('Learn new math skills'), findsOneWidget);
+    expect(find.text("Practice what you've learned"), findsOneWidget);
+    expect(find.text('Open lessons'), findsOneWidget);
+    expect(find.text('Play now'), findsOneWidget);
+    expect(find.text('Log out'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byTooltip('Student account menu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Log out'), findsOneWidget);
+
+    await tester.tap(find.text('Log out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Log out of BayMath?'), findsOneWidget);
+    await tester.tap(find.text('Stay here'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+}
+
+Future<void> _pumpHome(WidgetTester tester, Size size) async {
+  tester.view.physicalSize = size;
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        studentSessionProvider.overrideWith(
+          (Ref ref) => StudentSession(
+            accessToken: 'test-token',
+            expiresAt: DateTime.utc(2027),
+            studentId: 'student-1',
+          ),
+        ),
+        ownStudentProfileProvider.overrideWith(
+          (Ref ref) => Future<Student?>.value(_student),
+        ),
+        ownStudentGradeLevelProvider.overrideWith(
+          (Ref ref) => Future<GradeLevel?>.value(GradeLevel.grade4),
+        ),
+        studentVisibleLessonsProvider.overrideWith(
+          (Ref ref) => Future<List<Lesson>>.value(_lessonsWithDuplicate),
+        ),
+        studentVisibleQuizzesProvider.overrideWith(
+          (Ref ref) => Future<List<Quiz>>.value(_quizzesWithDuplicate),
+        ),
+      ],
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light,
+        home: const StudentHomeScreen(),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 final DateTime _timestamp = DateTime.utc(2026, 1, 1);

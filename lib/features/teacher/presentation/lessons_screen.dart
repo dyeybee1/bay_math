@@ -12,6 +12,8 @@ import '../../../core/providers/session_provider.dart';
 import '../../../core/providers/supabase_providers.dart';
 import '../../../core/widgets/widgets.dart';
 import '../widgets/bm_shared_widgets.dart';
+import 'lesson_composer_screen.dart';
+import 'teacher_content_ordering.dart';
 import 'teacher_shell_screen.dart' show MySection, mySectionsProvider;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -25,7 +27,10 @@ final lessonsProvider = FutureProvider<List<Lesson>>((ref) {
 });
 
 /// Section ids [lessonId] is currently assigned to.
-final lessonSectionIdsProvider = FutureProvider.family<List<String>, String>((ref, lessonId) {
+final lessonSectionIdsProvider = FutureProvider.family<List<String>, String>((
+  ref,
+  lessonId,
+) {
   return ref.watch(lessonsRepositoryProvider).fetchSectionIds(lessonId);
 });
 
@@ -38,7 +43,10 @@ final lessonSectionIdsProvider = FutureProvider.family<List<String>, String>((re
 ({String symbol, bool useAccent}) _glyphFor(String title, int index) {
   final String t = title.toLowerCase();
 
-  if (t.contains('add') || t.contains('subtract') || t.contains('sum') || t.contains('differ')) {
+  if (t.contains('add') ||
+      t.contains('subtract') ||
+      t.contains('sum') ||
+      t.contains('differ')) {
     return (symbol: '±', useAccent: true);
   }
   if (t.contains('compar') || t.contains('greater') || t.contains('less')) {
@@ -62,7 +70,9 @@ final lessonSectionIdsProvider = FutureProvider.family<List<String>, String>((re
   if (t.contains('geometr') || t.contains('shape') || t.contains('angle')) {
     return (symbol: '△', useAccent: false);
   }
-  if (t.contains('algebra') || t.contains('equation') || t.contains('variable')) {
+  if (t.contains('algebra') ||
+      t.contains('equation') ||
+      t.contains('variable')) {
     return (symbol: 'x=', useAccent: true);
   }
   // Neutral fallback — alternate by index
@@ -73,51 +83,41 @@ final lessonSectionIdsProvider = FutureProvider.family<List<String>, String>((re
 // LessonsScreen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class LessonsScreen extends ConsumerWidget {
+class LessonsScreen extends ConsumerStatefulWidget {
   const LessonsScreen({super.key});
 
+  @override
+  ConsumerState<LessonsScreen> createState() => _LessonsScreenState();
+}
+
+class _LessonsScreenState extends ConsumerState<LessonsScreen> {
+  _LessonListScope _scope = _LessonListScope.all;
+
   Future<void> _create(BuildContext context, WidgetRef ref) async {
-    final SessionState session = ref.read(sessionProvider).value ?? const SessionNone();
+    final SessionState session = await ref.read(sessionProvider.future);
+    if (!context.mounted) return;
     if (session is! SessionTeacher) return;
 
-    final _LessonFormResult? result = await showDialog<_LessonFormResult>(
-      context: context,
-      builder: (_) => const _LessonDialog(),
+    final bool? saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(builder: (_) => const LessonComposerScreen()),
     );
-    if (result == null) return;
-
-    try {
-      await ref
-          .read(lessonsRepositoryProvider)
-          .create(title: result.title, body: result.body, createdBy: session.profile.id);
-      ref.invalidate(lessonsProvider);
-    } on AppFailure catch (failure) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(failure.message)));
-      }
-    }
+    if (saved ?? false) ref.invalidate(lessonsProvider);
   }
 
   Future<void> _edit(BuildContext context, WidgetRef ref, Lesson lesson) async {
-    final _LessonFormResult? result = await showDialog<_LessonFormResult>(
-      context: context,
-      builder: (_) => _LessonDialog(initial: lesson),
+    final bool? saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => LessonComposerScreen(lesson: lesson),
+      ),
     );
-    if (result == null) return;
-
-    try {
-      await ref
-          .read(lessonsRepositoryProvider)
-          .update(lessonId: lesson.id, title: result.title, body: result.body);
-      ref.invalidate(lessonsProvider);
-    } on AppFailure catch (failure) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(failure.message)));
-      }
-    }
+    if (saved ?? false) ref.invalidate(lessonsProvider);
   }
 
-  Future<void> _delete(BuildContext context, WidgetRef ref, Lesson lesson) async {
+  Future<void> _delete(
+    BuildContext context,
+    WidgetRef ref,
+    Lesson lesson,
+  ) async {
     final bool? confirmed = await AppDialog.show<bool>(
       context,
       title: 'Delete Lesson',
@@ -143,12 +143,18 @@ class LessonsScreen extends ConsumerWidget {
       ref.invalidate(lessonsProvider);
     } on AppFailure catch (failure) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(failure.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(failure.message)));
       }
     }
   }
 
-  Future<void> _assignSections(BuildContext context, WidgetRef ref, Lesson lesson) async {
+  Future<void> _assignSections(
+    BuildContext context,
+    WidgetRef ref,
+    Lesson lesson,
+  ) async {
     await showDialog<void>(
       context: context,
       builder: (_) => _AssignSectionsDialog(lesson: lesson),
@@ -156,10 +162,10 @@ class LessonsScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final AsyncValue<List<Lesson>> lessons = ref.watch(lessonsProvider);
 
-    return Container(
+    return Material(
       color: AppColors.bg,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(40, 36, 40, 40),
@@ -177,14 +183,19 @@ class LessonsScreen extends ConsumerWidget {
             ),
             // ── List ───────────────────────────────────────────────────
             lessons.when(
-              loading: () => const Padding(
-                padding: EdgeInsets.all(AppSpacing.xl),
-                child: AppLoadingIndicator(),
-              ),
-              error: (error, _) => AppErrorState(
-                message: error is AppFailure ? error.message : 'Could not load lessons.',
-                onRetry: () => ref.invalidate(lessonsProvider),
-              ),
+              loading:
+                  () => const Padding(
+                    padding: EdgeInsets.all(AppSpacing.xl),
+                    child: AppLoadingIndicator(),
+                  ),
+              error:
+                  (error, _) => AppErrorState(
+                    message:
+                        error is AppFailure
+                            ? error.message
+                            : 'Could not load lessons.',
+                    onRetry: () => ref.invalidate(lessonsProvider),
+                  ),
               data: (List<Lesson> list) {
                 if (list.isEmpty) {
                   return AppEmptyState(
@@ -195,17 +206,77 @@ class LessonsScreen extends ConsumerWidget {
                     onAction: () => _create(context, ref),
                   );
                 }
-                return _LessonSequenceList(
-                  lessons: list,
-                  onEdit: (l) => _edit(context, ref, l),
-                  onDelete: (l) => _delete(context, ref, l),
-                  onAssign: (l) => _assignSections(context, ref, l),
+                final List<TeacherContentListEntry<Lesson>> ordered =
+                    orderTeacherLessons(list);
+                final List<TeacherContentListEntry<Lesson>> visible =
+                    ordered.where((TeacherContentListEntry<Lesson> entry) {
+                      final Lesson lesson = entry.content;
+                      return switch (_scope) {
+                        _LessonListScope.all => true,
+                        _LessonListScope.builtIn =>
+                          lesson.sourceType == ContentSourceType.builtIn,
+                        _LessonListScope.mine =>
+                          lesson.sourceType == ContentSourceType.teacher,
+                      };
+                    }).toList();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _LessonListFilters(
+                      selected: _scope,
+                      onSelected: (value) => setState(() => _scope = value),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    if (visible.isEmpty)
+                      const AppEmptyState(
+                        icon: Icons.filter_alt_off_outlined,
+                        title: 'No lessons in this view',
+                        description: 'Choose another lesson filter.',
+                      )
+                    else
+                      _LessonSequenceList(
+                        lessons: visible,
+                        onEdit: (l) => _edit(context, ref, l),
+                        onDelete: (l) => _delete(context, ref, l),
+                        onAssign: (l) => _assignSections(context, ref, l),
+                      ),
+                  ],
                 );
               },
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+enum _LessonListScope { all, builtIn, mine }
+
+class _LessonListFilters extends StatelessWidget {
+  const _LessonListFilters({required this.selected, required this.onSelected});
+
+  final _LessonListScope selected;
+  final ValueChanged<_LessonListScope> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: <Widget>[
+        for (final (_LessonListScope scope, String label) option
+            in <(_LessonListScope, String)>[
+              (_LessonListScope.all, 'All'),
+              (_LessonListScope.builtIn, 'Built-in'),
+              (_LessonListScope.mine, 'My lessons'),
+            ])
+          ChoiceChip(
+            label: Text(option.$2),
+            selected: selected == option.$1,
+            onSelected: (_) => onSelected(option.$1),
+          ),
+      ],
     );
   }
 }
@@ -222,7 +293,7 @@ class _LessonSequenceList extends StatelessWidget {
     required this.onAssign,
   });
 
-  final List<Lesson> lessons;
+  final List<TeacherContentListEntry<Lesson>> lessons;
   final void Function(Lesson) onEdit;
   final void Function(Lesson) onDelete;
   final void Function(Lesson) onAssign;
@@ -236,7 +307,8 @@ class _LessonSequenceList extends StatelessWidget {
       children: <Widget>[
         for (int i = 0; i < lessons.length; i++)
           _LessonSequenceRow(
-            lesson: lessons[i],
+            lesson: lessons[i].content,
+            sequenceNumber: lessons[i].sequenceNumber,
             index: i,
             isFirst: i == 0,
             isLast: i == lessons.length - 1,
@@ -258,6 +330,7 @@ class _LessonSequenceList extends StatelessWidget {
 class _LessonSequenceRow extends StatefulWidget {
   const _LessonSequenceRow({
     required this.lesson,
+    required this.sequenceNumber,
     required this.index,
     required this.isFirst,
     required this.isLast,
@@ -269,6 +342,7 @@ class _LessonSequenceRow extends StatefulWidget {
   });
 
   final Lesson lesson;
+  final int? sequenceNumber;
   final int index;
   final bool isFirst;
   final bool isLast;
@@ -287,11 +361,13 @@ class _LessonSequenceRowState extends State<_LessonSequenceRow> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isBuiltIn = widget.lesson.sourceType == ContentSourceType.builtIn;
+    final bool isBuiltIn =
+        widget.lesson.sourceType == ContentSourceType.builtIn;
     final glyph = _glyphFor(widget.lesson.title, widget.index);
 
     final Color glyphFg = glyph.useAccent ? AppColors.accent : AppColors.teal;
-    final Color glyphBg = glyph.useAccent ? AppColors.accentSoft : AppColors.tealSoft;
+    final Color glyphBg =
+        glyph.useAccent ? AppColors.accentSoft : AppColors.tealSoft;
 
     // Card height is dynamic — we just need to know the node column layout.
     // The node is centred vertically to the first line of the card.
@@ -314,9 +390,14 @@ class _LessonSequenceRowState extends State<_LessonSequenceRow> {
                       SizedBox(height: widget.nodeSize / 2),
                       // Dashed line — occupies the rest of the column
                       Expanded(
-                        child: widget.isLast
-                            ? const SizedBox.shrink()
-                            : _DashedLine(color: AppColors.accent.withValues(alpha: 0.35)),
+                        child:
+                            widget.isLast
+                                ? const SizedBox.shrink()
+                                : _DashedLine(
+                                  color: AppColors.accent.withValues(
+                                    alpha: 0.35,
+                                  ),
+                                ),
                       ),
                     ],
                   ),
@@ -325,7 +406,10 @@ class _LessonSequenceRowState extends State<_LessonSequenceRow> {
                 Positioned(
                   top: 0,
                   child: _StepNode(
-                    number: widget.index + 1,
+                    key: ValueKey<String>(
+                      'lesson-sequence-${widget.lesson.id}',
+                    ),
+                    number: widget.sequenceNumber,
                     size: widget.nodeSize,
                   ),
                 ),
@@ -348,15 +432,15 @@ class _LessonSequenceRowState extends State<_LessonSequenceRow> {
                     color: AppColors.card,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: _hovered
-                          ? const Color(0xFFC8D3EC)
-                          : AppColors.line,
+                      color:
+                          _hovered ? const Color(0xFFC8D3EC) : AppColors.line,
                     ),
                     boxShadow: <BoxShadow>[
                       BoxShadow(
-                        color: _hovered
-                            ? AppColors.accent.withValues(alpha: 0.08)
-                            : Colors.black.withValues(alpha: 0.04),
+                        color:
+                            _hovered
+                                ? AppColors.accent.withValues(alpha: 0.08)
+                                : Colors.black.withValues(alpha: 0.04),
                         blurRadius: _hovered ? 16 : 6,
                         offset: Offset(0, _hovered ? 4 : 2),
                       ),
@@ -405,6 +489,12 @@ class _LessonSequenceRowState extends State<_LessonSequenceRow> {
                                 ),
                                 const SizedBox(width: 10),
                                 BmSourceBadge(isBuiltIn: isBuiltIn),
+                                if (!isBuiltIn) ...<Widget>[
+                                  const SizedBox(width: 8),
+                                  _LessonStatusBadge(
+                                    status: widget.lesson.publicationStatus,
+                                  ),
+                                ],
                               ],
                             ),
                             if (widget.lesson.body.isNotEmpty) ...<Widget>[
@@ -427,17 +517,20 @@ class _LessonSequenceRowState extends State<_LessonSequenceRow> {
                                 children: <Widget>[
                                   _TextActionButton(
                                     label: 'Assign Sections',
-                                    onPressed: () => widget.onAssign(widget.lesson),
+                                    onPressed:
+                                        () => widget.onAssign(widget.lesson),
                                   ),
                                   const SizedBox(width: 8),
                                   _TextActionButton(
                                     label: 'Edit',
-                                    onPressed: () => widget.onEdit(widget.lesson),
+                                    onPressed:
+                                        () => widget.onEdit(widget.lesson),
                                   ),
                                   const SizedBox(width: 8),
                                   _TextActionButton(
                                     label: 'Delete',
-                                    onPressed: () => widget.onDelete(widget.lesson),
+                                    onPressed:
+                                        () => widget.onDelete(widget.lesson),
                                     isDanger: true,
                                   ),
                                 ],
@@ -448,7 +541,7 @@ class _LessonSequenceRowState extends State<_LessonSequenceRow> {
                       ),
                       const SizedBox(width: 8),
                       // Trailing chevron
-                      Icon(
+                      const Icon(
                         Icons.chevron_right_rounded,
                         size: 20,
                         color: AppColors.grayText,
@@ -465,13 +558,45 @@ class _LessonSequenceRowState extends State<_LessonSequenceRow> {
   }
 }
 
+class _LessonStatusBadge extends StatelessWidget {
+  const _LessonStatusBadge({required this.status});
+
+  final LessonPublicationStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool published = status == LessonPublicationStatus.published;
+    final Color foreground =
+        published ? const Color(0xFF246B58) : AppColors.textSoft;
+    final Color background =
+        published
+            ? const Color(0xFFE7F4EF)
+            : Theme.of(context).colorScheme.surfaceContainerHighest;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        status.label,
+        style: AppTextStyles.inter(
+          size: 11,
+          weight: FontWeight.w700,
+          color: foreground,
+        ),
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Step node
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _StepNode extends StatelessWidget {
-  const _StepNode({required this.number, required this.size});
-  final int number;
+  const _StepNode({super.key, required this.number, required this.size});
+  final int? number;
   final double size;
 
   @override
@@ -493,7 +618,7 @@ class _StepNode extends StatelessWidget {
         ],
       ),
       child: Text(
-        '$number',
+        number?.toString() ?? '•',
         style: AppTextStyles.lexend(
           size: 16,
           weight: FontWeight.w700,
@@ -514,9 +639,7 @@ class _DashedLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _DashedLinePainter(color: color),
-    );
+    return CustomPaint(painter: _DashedLinePainter(color: color));
   }
 }
 
@@ -526,10 +649,11 @@ class _DashedLinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()
-      ..color = color
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
+    final Paint paint =
+        Paint()
+          ..color = color
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke;
 
     const double dashH = 6;
     const double gapH = 4;
@@ -568,9 +692,10 @@ class _TextActionButtonState extends State<_TextActionButton> {
 
   @override
   Widget build(BuildContext context) {
-    final Color fg = widget.isDanger
-        ? (_hovered ? AppColors.danger : AppColors.textSoft)
-        : (_hovered ? AppColors.accent : AppColors.textSoft);
+    final Color fg =
+        widget.isDanger
+            ? (_hovered ? AppColors.danger : AppColors.textSoft)
+            : (_hovered ? AppColors.accent : AppColors.textSoft);
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -593,93 +718,28 @@ class _TextActionButtonState extends State<_TextActionButton> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _LessonFormResult, _LessonDialog, _AssignSectionsDialog — UNCHANGED
+// _AssignSectionsDialog
 // ─────────────────────────────────────────────────────────────────────────────
-
-class _LessonFormResult {
-  const _LessonFormResult({required this.title, required this.body});
-  final String title;
-  final String body;
-}
-
-class _LessonDialog extends StatefulWidget {
-  const _LessonDialog({this.initial});
-  final Lesson? initial;
-
-  @override
-  State<_LessonDialog> createState() => _LessonDialogState();
-}
-
-class _LessonDialogState extends State<_LessonDialog> {
-  late final TextEditingController _titleController =
-      TextEditingController(text: widget.initial?.title ?? '');
-  late final TextEditingController _bodyController =
-      TextEditingController(text: widget.initial?.body ?? '');
-  String? _errorText;
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _bodyController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final String title = _titleController.text.trim();
-    final String body = _bodyController.text.trim();
-    if (title.isEmpty || body.isEmpty) {
-      setState(() => _errorText = 'Enter a title and body.');
-      return;
-    }
-    Navigator.of(context).pop(_LessonFormResult(title: title, body: body));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppDialog(
-      title: widget.initial == null ? 'New Lesson' : 'Edit Lesson',
-      maxWidth: 560,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          AppTextField(controller: _titleController, label: 'Title'),
-          const SizedBox(height: AppSpacing.sm),
-          AppTextField(
-            controller: _bodyController,
-            label: 'Body',
-            type: AppTextFieldType.multiline,
-            maxLines: 8,
-          ),
-          if (_errorText != null) ...<Widget>[
-            const SizedBox(height: AppSpacing.sm),
-            Text(_errorText!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-          ],
-        ],
-      ),
-      actions: <Widget>[
-        AppButton(
-          label: 'Cancel',
-          variant: AppButtonVariant.text,
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        AppButton(label: widget.initial == null ? 'Create' : 'Save', onPressed: _submit),
-      ],
-    );
-  }
-}
 
 class _AssignSectionsDialog extends ConsumerWidget {
   const _AssignSectionsDialog({required this.lesson});
   final Lesson lesson;
 
-  Future<void> _toggle(WidgetRef ref, BuildContext context, String sectionId, bool assign) async {
-    final SessionState session = ref.read(sessionProvider).value ?? const SessionNone();
+  Future<void> _toggle(
+    WidgetRef ref,
+    BuildContext context,
+    String sectionId,
+    bool assign,
+  ) async {
+    final SessionState session =
+        ref.read(sessionProvider).value ?? const SessionNone();
     if (session is! SessionTeacher) return;
 
     try {
       if (assign) {
-        await ref.read(lessonsRepositoryProvider).assign(
+        await ref
+            .read(lessonsRepositoryProvider)
+            .assign(
               lessonId: lesson.id,
               sectionId: sectionId,
               assignedBy: session.profile.id,
@@ -692,33 +752,48 @@ class _AssignSectionsDialog extends ConsumerWidget {
       ref.invalidate(lessonSectionIdsProvider(lesson.id));
     } on AppFailure catch (failure) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(failure.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(failure.message)));
       }
     }
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<MySection>> mySections = ref.watch(mySectionsProvider);
-    final AsyncValue<List<String>> assignedIds = ref.watch(lessonSectionIdsProvider(lesson.id));
+    final AsyncValue<List<MySection>> mySections = ref.watch(
+      mySectionsProvider,
+    );
+    final AsyncValue<List<String>> assignedIds = ref.watch(
+      lessonSectionIdsProvider(lesson.id),
+    );
 
     return AppDialog(
       title: 'Assign Sections — ${lesson.title}',
       maxWidth: 480,
       content: mySections.when(
-        loading: () => const Padding(
-          padding: EdgeInsets.all(AppSpacing.md),
-          child: AppLoadingIndicator(),
-        ),
-        error: (error, _) => AppErrorState(
-          message: error is AppFailure ? error.message : 'Could not load your sections.',
-          onRetry: () => ref.invalidate(mySectionsProvider),
-        ),
+        loading:
+            () => const Padding(
+              padding: EdgeInsets.all(AppSpacing.md),
+              child: AppLoadingIndicator(),
+            ),
+        error:
+            (error, _) => AppErrorState(
+              message:
+                  error is AppFailure
+                      ? error.message
+                      : 'Could not load your sections.',
+              onRetry: () => ref.invalidate(mySectionsProvider),
+            ),
         data: (List<MySection> sections) {
-          final List<Section> ownSections =
-              [for (final MySection s in sections) if (s.section != null) s.section!];
+          final List<Section> ownSections = [
+            for (final MySection s in sections)
+              if (s.section != null) s.section!,
+          ];
           if (ownSections.isEmpty) {
-            return const Text('You have no sections to assign this lesson to yet.');
+            return const Text(
+              'You have no sections to assign this lesson to yet.',
+            );
           }
           final Set<String> assigned = (assignedIds.value ?? const []).toSet();
           return Column(
@@ -729,9 +804,11 @@ class _AssignSectionsDialog extends ConsumerWidget {
                   contentPadding: EdgeInsets.zero,
                   value: assigned.contains(section.id),
                   title: Text('${section.gradeLevel.label} — ${section.name}'),
-                  onChanged: assignedIds.isLoading
-                      ? null
-                      : (bool? value) => _toggle(ref, context, section.id, value ?? false),
+                  onChanged:
+                      assignedIds.isLoading
+                          ? null
+                          : (bool? value) =>
+                              _toggle(ref, context, section.id, value ?? false),
                 ),
             ],
           );

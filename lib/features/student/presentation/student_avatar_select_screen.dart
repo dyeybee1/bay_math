@@ -22,10 +22,12 @@ class StudentAvatarSelectScreen extends ConsumerStatefulWidget {
   const StudentAvatarSelectScreen({super.key});
 
   @override
-  ConsumerState<StudentAvatarSelectScreen> createState() => _StudentAvatarSelectScreenState();
+  ConsumerState<StudentAvatarSelectScreen> createState() =>
+      _StudentAvatarSelectScreenState();
 }
 
-class _StudentAvatarSelectScreenState extends ConsumerState<StudentAvatarSelectScreen> {
+class _StudentAvatarSelectScreenState
+    extends ConsumerState<StudentAvatarSelectScreen> {
   String? _selectedId;
   bool _isSaving = false;
   String? _errorText;
@@ -79,23 +81,29 @@ class _StudentAvatarSelectScreenState extends ConsumerState<StudentAvatarSelectS
               ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: AppSpacing.xl),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: AvatarCatalog.all.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                mainAxisSpacing: AppSpacing.md,
-                crossAxisSpacing: AppSpacing.md,
-                childAspectRatio: 0.85,
-              ),
-              itemBuilder: (context, index) {
-                final AvatarOption option = AvatarCatalog.all[index];
-                final bool isSelected = option.id == _selectedId;
-                return _AvatarTile(
-                  option: option,
-                  isSelected: isSelected,
-                  onTap: () => setState(() => _selectedId = option.id),
+            LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final int columnCount = constraints.maxWidth >= 880 ? 6 : 4;
+
+                return GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: AvatarCatalog.all.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columnCount,
+                    mainAxisSpacing: AppSpacing.md,
+                    crossAxisSpacing: AppSpacing.md,
+                    mainAxisExtent: 112,
+                  ),
+                  itemBuilder: (BuildContext context, int index) {
+                    final AvatarOption option = AvatarCatalog.all[index];
+                    final bool isSelected = option.id == _selectedId;
+                    return _AvatarTile(
+                      option: option,
+                      isSelected: isSelected,
+                      onTap: () => setState(() => _selectedId = option.id),
+                    );
+                  },
                 );
               },
             ),
@@ -123,7 +131,11 @@ class _StudentAvatarSelectScreenState extends ConsumerState<StudentAvatarSelectS
 }
 
 class _AvatarTile extends StatelessWidget {
-  const _AvatarTile({required this.option, required this.isSelected, required this.onTap});
+  const _AvatarTile({
+    required this.option,
+    required this.isSelected,
+    required this.onTap,
+  });
 
   final AvatarOption option;
   final bool isSelected;
@@ -134,40 +146,45 @@ class _AvatarTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: option.background,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isSelected ? AppColors.primary : Colors.transparent,
-                width: 3,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: option.background,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? AppColors.primary : Colors.transparent,
+                  width: 3,
+                ),
+                boxShadow:
+                    isSelected
+                        ? <BoxShadow>[
+                          BoxShadow(
+                            color: AppColors.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                          ),
+                        ]
+                        : null,
               ),
-              boxShadow: isSelected
-                  ? <BoxShadow>[
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                      ),
-                    ]
-                  : null,
+              child: Icon(option.icon, color: Colors.white, size: 30),
             ),
-            child: Icon(option.icon, color: Colors.white, size: 30),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            option.label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
-              color: isSelected ? AppColors.primary : AppColors.textSecondary,
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              option.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                color: isSelected ? AppColors.primary : AppColors.textSecondary,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

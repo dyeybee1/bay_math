@@ -7,6 +7,7 @@ import 'package:instructional_math_app/app/router/app_routes.dart';
 import 'package:instructional_math_app/core/models/profile.dart';
 import 'package:instructional_math_app/core/models/student_session.dart';
 import 'package:instructional_math_app/core/providers/session_provider.dart';
+import 'package:instructional_math_app/core/providers/password_recovery_provider.dart';
 import 'package:instructional_math_app/core/providers/student_session_provider.dart';
 
 void main() {
@@ -101,15 +102,74 @@ void main() {
         AppRoutes.adminHome,
       );
     });
+
+    test('recovery sessions cannot enter Teacher or Admin workspaces', () {
+      for (final SessionState session in <SessionState>[
+        SessionTeacher(_profile(ProfileRole.teacher)),
+        SessionAdmin(_profile(ProfileRole.admin)),
+      ]) {
+        expect(
+          redirectForStaffSession(
+            session,
+            AppRoutes.teacherHome,
+            recoveryStatus: PasswordRecoveryStatus.valid,
+          ),
+          AppRoutes.resetPassword,
+        );
+        expect(
+          redirectForStaffSession(
+            session,
+            AppRoutes.resetPassword,
+            recoveryStatus: PasswordRecoveryStatus.valid,
+          ),
+          isNull,
+        );
+      }
+    });
+
+    test('pending Teacher remains pending after recovery completion', () {
+      expect(
+        redirectForStaffSession(
+          SessionTeacher(
+            _profile(ProfileRole.teacher, status: ProfileStatus.pending),
+          ),
+          AppRoutes.login,
+          recoveryStatus: PasswordRecoveryStatus.completed,
+        ),
+        AppRoutes.pendingApproval,
+      );
+    });
+
+    test('approved Teacher and Admin retain their normal role routes', () {
+      expect(
+        redirectForStaffSession(
+          SessionTeacher(_profile(ProfileRole.teacher)),
+          AppRoutes.login,
+          recoveryStatus: PasswordRecoveryStatus.completed,
+        ),
+        AppRoutes.teacherHome,
+      );
+      expect(
+        redirectForStaffSession(
+          SessionAdmin(_profile(ProfileRole.admin)),
+          AppRoutes.login,
+          recoveryStatus: PasswordRecoveryStatus.completed,
+        ),
+        AppRoutes.adminHome,
+      );
+    });
   });
 }
 
-Profile _profile(ProfileRole role) {
+Profile _profile(
+  ProfileRole role, {
+  ProfileStatus status = ProfileStatus.approved,
+}) {
   final DateTime timestamp = DateTime.utc(2026);
   return Profile(
     id: '${role.name}-id',
     role: role,
-    status: ProfileStatus.approved,
+    status: status,
     fullName: role.name,
     email: '${role.name}@example.com',
     createdAt: timestamp,

@@ -40,7 +40,7 @@ abstract final class _StudentHomePalette {
 class StudentHomeScreen extends ConsumerWidget {
   const StudentHomeScreen({super.key});
 
-  static const double _maxContentWidth = 1400;
+  static const double _maxContentWidth = 1280;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -114,6 +114,33 @@ class StudentHomeScreen extends ConsumerWidget {
                         ) {
                           final double minContentHeight =
                               bodyConstraints.maxHeight - (verticalPadding * 2);
+                          final double welcomeHeight =
+                              isExpanded
+                                  ? 144
+                                  : isShort
+                                  ? 108
+                                  : 128;
+                          final double sectionGap =
+                              isShort ? 12 : AppSpacing.lg;
+                          final double gridGap =
+                              isExpanded
+                                  ? AppSpacing.lg
+                                  : isShort
+                                  ? 12
+                                  : AppSpacing.md;
+                          final double availableCardHeight =
+                              (minContentHeight -
+                                  welcomeHeight -
+                                  sectionGap -
+                                  gridGap) /
+                              2;
+                          final double cardHeight =
+                              availableCardHeight
+                                  .clamp(
+                                    isShort ? 184.0 : 208.0,
+                                    isExpanded ? 268.0 : 240.0,
+                                  )
+                                  .toDouble();
 
                           return SingleChildScrollView(
                             padding: EdgeInsets.fromLTRB(
@@ -141,16 +168,14 @@ class StudentHomeScreen extends ConsumerWidget {
                                       gradeLevel: gradeLevel,
                                       isShort: isShort,
                                       isExpanded: isExpanded,
+                                      height: welcomeHeight,
                                     ),
-                                    SizedBox(
-                                      height:
-                                          isShort
-                                              ? AppSpacing.md
-                                              : AppSpacing.lg,
-                                    ),
+                                    SizedBox(height: sectionGap),
                                     _LearningDestinationGrid(
                                       isShort: isShort,
                                       isExpanded: isExpanded,
+                                      cardHeight: cardHeight,
+                                      gap: gridGap,
                                       lessonCount: lessonCount,
                                       quizCount: quizCount,
                                       lessonsLoading: lessonsAsync.isLoading,
@@ -271,39 +296,49 @@ class _HomeHeader extends ConsumerWidget {
                   semanticLabel: 'BayMath',
                 ),
                 const Spacer(),
-                _StudentIdentity(
-                  profile: profile,
-                  gradeLevel: gradeLevel,
-                  avatar: avatar,
-                  isLoading: isLoading,
-                  isShort: isShort,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                OutlinedButton.icon(
-                  onPressed: () => _confirmLogout(context, ref),
-                  icon: const Icon(Icons.logout_rounded, size: 20),
-                  label: const Text('Log out'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: colorScheme.error,
-                    side: BorderSide(
-                      color: colorScheme.error.withValues(alpha: 0.35),
-                    ),
-                    minimumSize: Size(
-                      isShort ? 108 : 116,
-                      isShort
-                          ? AppDimensions.minTouchTarget
-                          : AppDimensions.minTouchTarget + 4,
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    textStyle: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
+                PopupMenuButton<_StudentAccountAction>(
+                  tooltip: 'Student account menu',
+                  onSelected: (_StudentAccountAction action) {
+                    if (action == _StudentAccountAction.logout) {
+                      _confirmLogout(context, ref);
+                    }
+                  },
+                  position: PopupMenuPosition.under,
+                  offset: const Offset(0, 6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  itemBuilder:
+                      (BuildContext context) =>
+                          <PopupMenuEntry<_StudentAccountAction>>[
+                            PopupMenuItem<_StudentAccountAction>(
+                              value: _StudentAccountAction.logout,
+                              height: 52,
+                              child: Row(
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.logout_rounded,
+                                    color: colorScheme.error,
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  Text(
+                                    'Log out',
+                                    style: GoogleFonts.inter(
+                                      color: colorScheme.error,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                  child: _StudentIdentity(
+                    profile: profile,
+                    gradeLevel: gradeLevel,
+                    avatar: avatar,
+                    isLoading: isLoading,
+                    isShort: isShort,
                   ),
                 ),
               ],
@@ -314,6 +349,8 @@ class _HomeHeader extends ConsumerWidget {
     );
   }
 }
+
+enum _StudentAccountAction { logout }
 
 class _StudentIdentity extends StatelessWidget {
   const _StudentIdentity({
@@ -335,7 +372,10 @@ class _StudentIdentity extends StatelessWidget {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      constraints: const BoxConstraints(maxWidth: 260),
+      constraints: const BoxConstraints(
+        minHeight: AppDimensions.minTouchTarget,
+        maxWidth: 300,
+      ),
       padding: const EdgeInsets.fromLTRB(6, 6, AppSpacing.md, 6),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.72),
@@ -386,6 +426,12 @@ class _StudentIdentity extends StatelessWidget {
                       ],
                     ),
           ),
+          const SizedBox(width: 6),
+          Icon(
+            Icons.expand_more_rounded,
+            size: 22,
+            color: colorScheme.onSurfaceVariant,
+          ),
         ],
       ),
     );
@@ -431,112 +477,117 @@ class _WelcomeBanner extends StatelessWidget {
     required this.gradeLevel,
     required this.isShort,
     required this.isExpanded,
+    required this.height,
   });
 
   final String? name;
   final GradeLevel? gradeLevel;
   final bool isShort;
   final bool isExpanded;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     final String firstName = _firstName(name);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: <Color>[AppColors.onPrimaryContainer, AppColors.primary],
+    return SizedBox(
+      height: height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[AppColors.onPrimaryContainer, AppColors.primary],
+            ),
           ),
-        ),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: isExpanded ? AppSpacing.xl : AppSpacing.lg,
-            vertical: isShort ? AppSpacing.md : AppSpacing.lg,
-          ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.18),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: isExpanded ? AppSpacing.xl : AppSpacing.lg,
+              vertical: isShort ? 12 : AppSpacing.md,
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.18),
+                          ),
+                        ),
+                        child: Text(
+                          gradeLevel == null
+                              ? 'YOUR MATH SPACE'
+                              : '${gradeLevel!.label.toUpperCase()}  |  YOUR MATH SPACE',
+                          style: GoogleFonts.inter(
+                            color: Colors.white.withValues(alpha: 0.88),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                          ),
                         ),
                       ),
-                      child: Text(
-                        gradeLevel == null
-                            ? 'YOUR MATH SPACE'
-                            : '${gradeLevel!.label.toUpperCase()}  |  YOUR MATH SPACE',
-                        style: GoogleFonts.inter(
-                          color: Colors.white.withValues(alpha: 0.88),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.8,
+                      SizedBox(height: isShort ? 5 : 8),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 250),
+                        child: Text(
+                          firstName.isEmpty
+                              ? 'Welcome back.'
+                              : 'Welcome back, $firstName.',
+                          key: ValueKey<String>(firstName),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.lexend(
+                            color: Colors.white,
+                            fontSize:
+                                isExpanded
+                                    ? 31
+                                    : isShort
+                                    ? 24
+                                    : 27,
+                            fontWeight: FontWeight.w700,
+                            height: 1.15,
+                          ),
                         ),
                       ),
-                    ),
-                    SizedBox(height: isShort ? 8 : 12),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      child: Text(
-                        firstName.isEmpty
-                            ? 'Welcome back.'
-                            : 'Welcome back, $firstName.',
-                        key: ValueKey<String>(firstName),
-                        maxLines: 2,
+                      SizedBox(height: isShort ? 3 : 5),
+                      Text(
+                        'Pick a path and keep your math momentum going!',
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.lexend(
-                          color: Colors.white,
-                          fontSize:
-                              isExpanded
-                                  ? 32
-                                  : isShort
-                                  ? 25
-                                  : 28,
-                          fontWeight: FontWeight.w700,
-                          height: 1.15,
+                        style: GoogleFonts.inter(
+                          color: Colors.white.withValues(alpha: 0.82),
+                          fontSize: isShort ? 14 : 15,
+                          fontWeight: FontWeight.w500,
+                          height: 1.4,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Choose where to begin and keep your math momentum going.',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        color: Colors.white.withValues(alpha: 0.82),
-                        fontSize: isShort ? 13 : 14,
-                        fontWeight: FontWeight.w500,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              SizedBox(width: isShort ? AppSpacing.md : AppSpacing.xl),
-              _MathConstellation(
-                width:
-                    isExpanded
-                        ? 300
-                        : isShort
-                        ? 220
-                        : 260,
-                compact: isShort,
-              ),
-            ],
+                SizedBox(width: isShort ? AppSpacing.md : AppSpacing.xl),
+                _MathConstellation(
+                  width:
+                      isExpanded
+                          ? 272
+                          : isShort
+                          ? 184
+                          : 224,
+                  compact: isShort,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -558,12 +609,12 @@ class _MathConstellation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double tileSize = compact ? 42 : 50;
+    final double tileSize = compact ? 38 : 44;
 
     return ExcludeSemantics(
       child: SizedBox(
         width: width,
-        height: compact ? 88 : 108,
+        height: compact ? 72 : 88,
         child: Stack(
           children: <Widget>[
             Positioned(
@@ -634,6 +685,8 @@ class _LearningDestinationGrid extends StatelessWidget {
   const _LearningDestinationGrid({
     required this.isShort,
     required this.isExpanded,
+    required this.cardHeight,
+    required this.gap,
     required this.lessonCount,
     required this.quizCount,
     required this.lessonsLoading,
@@ -642,6 +695,8 @@ class _LearningDestinationGrid extends StatelessWidget {
 
   final bool isShort;
   final bool isExpanded;
+  final double cardHeight;
+  final double gap;
   final int? lessonCount;
   final int? quizCount;
   final bool lessonsLoading;
@@ -653,12 +708,13 @@ class _LearningDestinationGrid extends StatelessWidget {
       _LearningDestination(
         eyebrow: 'EXPLORE',
         title: 'Lessons',
-        subtitle: 'Build new skills with guided mathematics lessons.',
-        metaLabel:
+        subtitle: 'Learn new math skills',
+        statusLabel:
             lessonCount == null
-                ? 'Open lessons'
+                ? 'Lessons ready'
                 : '$lessonCount ${lessonCount == 1 ? 'lesson' : 'lessons'}',
-        metaLoading: lessonsLoading,
+        statusLoading: lessonsLoading,
+        ctaLabel: 'Open lessons',
         icon: Icons.menu_book_rounded,
         color: AppColors.primary,
         containerColor: AppColors.primaryContainer,
@@ -667,12 +723,13 @@ class _LearningDestinationGrid extends StatelessWidget {
       _LearningDestination(
         eyebrow: 'PRACTICE',
         title: 'Quizzes',
-        subtitle: 'Check your understanding and strengthen your skills.',
-        metaLabel:
+        subtitle: "Practice what you've learned",
+        statusLabel:
             quizCount == null
-                ? 'Open assessments'
+                ? 'Quizzes ready'
                 : '$quizCount ${quizCount == 1 ? 'assessment' : 'assessments'}',
-        metaLoading: quizzesLoading,
+        statusLoading: quizzesLoading,
+        ctaLabel: 'Open quizzes',
         icon: Icons.assignment_turned_in_rounded,
         color: AppColors.secondary,
         containerColor: AppColors.secondaryContainer,
@@ -681,9 +738,10 @@ class _LearningDestinationGrid extends StatelessWidget {
       _LearningDestination(
         eyebrow: 'PROGRESS',
         title: 'Statistics',
-        subtitle: 'See your learning progress and growing math mastery.',
-        metaLabel: 'View your progress',
-        metaLoading: false,
+        subtitle: "See how much you've improved",
+        statusLabel: 'Your progress',
+        statusLoading: false,
+        ctaLabel: 'View stats',
         icon: Icons.insights_rounded,
         color: _StudentHomePalette.progress,
         containerColor: _StudentHomePalette.progressContainer,
@@ -692,9 +750,10 @@ class _LearningDestinationGrid extends StatelessWidget {
       _LearningDestination(
         eyebrow: 'CHALLENGE',
         title: 'Endless Quiz',
-        subtitle: 'Keep answering, build a streak, and climb the leaderboard.',
-        metaLabel: 'Start a new round',
-        metaLoading: false,
+        subtitle: 'Play, earn streaks, and climb the ranks',
+        statusLabel: 'Streak challenge',
+        statusLoading: false,
+        ctaLabel: 'Play now',
         icon: Icons.all_inclusive_rounded,
         color: AppColors.tertiary,
         containerColor: AppColors.tertiaryContainer,
@@ -709,41 +768,22 @@ class _LearningDestinationGrid extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final double gap =
-            isExpanded
-                ? AppSpacing.lg
-                : isShort
-                ? 12
-                : AppSpacing.md;
-        final double cardWidth = (constraints.maxWidth - (gap * 3)) / 4;
-        final double textScale = MediaQuery.textScalerOf(context).scale(1);
-        final double scaleAllowance =
-            ((textScale - 1).clamp(0.0, 1.0)).toDouble() * 52;
-        final double widthDrivenHeight = cardWidth * 0.76;
-        final double baseHeight =
-            isExpanded
-                ? 258
-                : isShort
-                ? 238
-                : 236;
-        final double cardHeight =
-            widthDrivenHeight
-                .clamp(baseHeight, isExpanded ? 278 : 252)
-                .toDouble() +
-            scaleAllowance;
-
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: destinations.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,
+            crossAxisCount: 2,
             mainAxisSpacing: gap,
             crossAxisSpacing: gap,
             mainAxisExtent: cardHeight,
           ),
           itemBuilder: (BuildContext context, int index) {
-            return _StudentFeatureCard(destination: destinations[index]);
+            return _StudentFeatureCard(
+              destination: destinations[index],
+              compact: isShort,
+              expanded: isExpanded,
+            );
           },
         );
       },
@@ -756,8 +796,9 @@ class _LearningDestination {
     required this.eyebrow,
     required this.title,
     required this.subtitle,
-    required this.metaLabel,
-    required this.metaLoading,
+    required this.statusLabel,
+    required this.statusLoading,
+    required this.ctaLabel,
     required this.icon,
     required this.color,
     required this.containerColor,
@@ -767,8 +808,9 @@ class _LearningDestination {
   final String eyebrow;
   final String title;
   final String subtitle;
-  final String metaLabel;
-  final bool metaLoading;
+  final String statusLabel;
+  final bool statusLoading;
+  final String ctaLabel;
   final IconData icon;
   final Color color;
   final Color containerColor;
@@ -776,9 +818,15 @@ class _LearningDestination {
 }
 
 class _StudentFeatureCard extends StatefulWidget {
-  const _StudentFeatureCard({required this.destination});
+  const _StudentFeatureCard({
+    required this.destination,
+    required this.compact,
+    required this.expanded,
+  });
 
   final _LearningDestination destination;
+  final bool compact;
+  final bool expanded;
 
   @override
   State<_StudentFeatureCard> createState() => _StudentFeatureCardState();
@@ -793,9 +841,11 @@ class _StudentFeatureCardState extends State<_StudentFeatureCard> {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
     return Semantics(
+      key: ValueKey<String>('student-home-card-${destination.title}'),
       button: true,
       label:
-          '${destination.title}. ${destination.subtitle} ${destination.metaLabel}.',
+          '${destination.title}. ${destination.subtitle}. '
+          '${destination.statusLabel}. ${destination.ctaLabel}.',
       child: AnimatedScale(
         scale: _pressed ? 0.985 : 1,
         duration: const Duration(milliseconds: 150),
@@ -804,7 +854,7 @@ class _StudentFeatureCardState extends State<_StudentFeatureCard> {
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOutCubic,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(24),
             boxShadow: <BoxShadow>[
               BoxShadow(
                 color: AppColors.onPrimaryContainer.withValues(
@@ -817,7 +867,7 @@ class _StudentFeatureCardState extends State<_StudentFeatureCard> {
           ),
           child: Material(
             color: colorScheme.surface,
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(24),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: destination.onTap,
@@ -826,7 +876,15 @@ class _StudentFeatureCardState extends State<_StudentFeatureCard> {
               },
               child: Ink(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(22),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: <Color>[
+                      destination.containerColor.withValues(alpha: 0.62),
+                      colorScheme.surface,
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(24),
                   border: Border.all(
                     color: destination.color.withValues(alpha: 0.2),
                   ),
@@ -834,98 +892,113 @@ class _StudentFeatureCardState extends State<_StudentFeatureCard> {
                 child: Stack(
                   children: <Widget>[
                     Positioned(
-                      right: -42,
-                      top: -48,
+                      right: -34,
+                      top: -52,
                       child: Container(
                         width: 132,
                         height: 132,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: destination.containerColor.withValues(
-                            alpha: 0.55,
-                          ),
+                          color: destination.color.withValues(alpha: 0.07),
                         ),
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      padding: EdgeInsets.all(
+                        widget.expanded ? AppSpacing.lg : AppSpacing.md,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: <Widget>[
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Container(
-                                width: 52,
-                                height: 52,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: destination.containerColor,
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Icon(
-                                  destination.icon,
-                                  color: destination.color,
-                                  size: 27,
-                                ),
-                              ),
-                              const Spacer(),
-                              Container(
-                                width: AppDimensions.minTouchTarget,
-                                height: AppDimensions.minTouchTarget,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: destination.color,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.arrow_forward_rounded,
-                                  color: Colors.white,
-                                  size: 22,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          Text(
-                            destination.eyebrow,
-                            style: GoogleFonts.inter(
+                          Container(
+                            width: widget.expanded ? 78 : 66,
+                            height: widget.expanded ? 78 : 66,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
                               color: destination.color,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.1,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: <BoxShadow>[
+                                BoxShadow(
+                                  color: destination.color.withValues(
+                                    alpha: 0.2,
+                                  ),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 7),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              destination.icon,
+                              color: Colors.white,
+                              size: widget.expanded ? 38 : 32,
                             ),
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            destination.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.lexend(
-                              color: AppColors.textPrimary,
-                              fontSize: 21,
-                              fontWeight: FontWeight.w700,
-                              height: 1.18,
+                          SizedBox(width: widget.compact ? 14 : AppSpacing.lg),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  destination.eyebrow,
+                                  style: GoogleFonts.inter(
+                                    color: destination.color,
+                                    fontSize: widget.compact ? 11 : 12,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.05,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  destination.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.lexend(
+                                    color: AppColors.textPrimary,
+                                    fontSize:
+                                        widget.expanded
+                                            ? 27
+                                            : widget.compact
+                                            ? 22
+                                            : 24,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.15,
+                                  ),
+                                ),
+                                SizedBox(height: widget.compact ? 5 : 7),
+                                Text(
+                                  destination.subtitle,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                    color: AppColors.textSecondary,
+                                    fontSize: widget.compact ? 14 : 15,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.3,
+                                  ),
+                                ),
+                                SizedBox(height: widget.compact ? 10 : 14),
+                                Row(
+                                  children: <Widget>[
+                                    Flexible(
+                                      child: _DestinationStatus(
+                                        label: destination.statusLabel,
+                                        isLoading: destination.statusLoading,
+                                        color: destination.color,
+                                        containerColor:
+                                            destination.containerColor,
+                                      ),
+                                    ),
+                                    const SizedBox(width: AppSpacing.sm),
+                                    _DestinationCta(
+                                      label: destination.ctaLabel,
+                                      color: destination.color,
+                                      compact: widget.compact,
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(height: 7),
-                          Text(
-                            destination.subtitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              height: 1.35,
-                            ),
-                          ),
-                          const Spacer(),
-                          _DestinationMeta(
-                            label: destination.metaLabel,
-                            isLoading: destination.metaLoading,
-                            color: destination.color,
-                            containerColor: destination.containerColor,
                           ),
                         ],
                       ),
@@ -941,8 +1014,8 @@ class _StudentFeatureCardState extends State<_StudentFeatureCard> {
   }
 }
 
-class _DestinationMeta extends StatelessWidget {
-  const _DestinationMeta({
+class _DestinationStatus extends StatelessWidget {
+  const _DestinationStatus({
     required this.label,
     required this.isLoading,
     required this.color,
@@ -957,8 +1030,8 @@ class _DestinationMeta extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 40),
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      constraints: const BoxConstraints(minHeight: 38),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
         color: containerColor.withValues(alpha: 0.62),
         borderRadius: BorderRadius.circular(12),
@@ -972,22 +1045,62 @@ class _DestinationMeta extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2, color: color),
             ),
             const SizedBox(width: AppSpacing.sm),
-          ] else ...<Widget>[
-            Icon(Icons.arrow_right_alt_rounded, color: color, size: 20),
-            const SizedBox(width: 6),
           ],
           Expanded(
             child: Text(
               isLoading ? 'Loading...' : label,
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.inter(
                 color: color,
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w700,
                 height: 1.25,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DestinationCta extends StatelessWidget {
+  const _DestinationCta({
+    required this.label,
+    required this.color,
+    required this.compact,
+  });
+
+  final String label;
+  final Color color;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 40),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 11 : 14),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              color: Colors.white,
+              fontSize: compact ? 13 : 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(width: 5),
+          const Icon(
+            Icons.arrow_forward_rounded,
+            color: Colors.white,
+            size: 19,
           ),
         ],
       ),

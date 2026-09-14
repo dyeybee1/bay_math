@@ -75,6 +75,7 @@ class _AdminShellScreenState extends ConsumerState<AdminShellScreen> {
     // Preserve every existing refresh boundary and destination index.
     if (index == 1) {
       ref.invalidate(teachersListProvider);
+      ref.invalidate(processedTeachersListProvider);
     }
     if (index == 0) {
       ref.invalidate(adminSummaryTilesProvider);
@@ -85,6 +86,7 @@ class _AdminShellScreenState extends ConsumerState<AdminShellScreen> {
       ref.invalidate(adminAccountsTeachersProvider);
       ref.invalidate(adminAccountsStudentsProvider);
       ref.invalidate(teachersListProvider);
+      ref.invalidate(processedTeachersListProvider);
     }
     if (index == 5) {
       ref.invalidate(adminQuizResultsProvider);

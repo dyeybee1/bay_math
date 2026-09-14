@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:instructional_math_app/app/constants/app_spacing.dart';
 import 'package:instructional_math_app/app/theme/app_theme.dart';
 import 'package:instructional_math_app/core/models/content_source_type.dart';
 import 'package:instructional_math_app/core/models/lesson.dart';
@@ -43,8 +44,28 @@ void main() {
         expect(secondPosition.dy, closeTo(firstPosition.dy, 0.1));
         expect(secondPosition.dx, greaterThan(firstPosition.dx));
         expect(tester.getSize(firstCard).width, lessThanOrEqualTo(700));
+        final double firstCardHeight = tester.getSize(firstCard).height;
+        expect(
+          firstCardHeight,
+          greaterThanOrEqualTo(140),
+          reason: 'viewport: $size',
+        );
+        expect(
+          firstCardHeight,
+          lessThanOrEqualTo(150),
+          reason: 'viewport: $size',
+        );
+        expect(
+          tester.getSize(find.byKey(const Key('lesson_topic_visual_0'))),
+          tester.getSize(find.byKey(const Key('lesson_topic_visual_1'))),
+        );
+        expect(find.text('Start lesson'), findsNothing);
+        expect(find.byIcon(Icons.arrow_forward_rounded), findsNothing);
+        expect(find.text('5 LESSONS'), findsOneWidget);
         expect(find.text(_lessons.first.title), findsOneWidget);
-        expect(find.text(_lessons.first.body), findsOneWidget);
+        for (final Lesson lesson in _lessons) {
+          expect(find.text(lesson.body), findsNothing);
+        }
         expect(tester.takeException(), isNull, reason: 'viewport: $size');
       }
     });
@@ -73,6 +94,9 @@ void main() {
       expect(find.text('LESSON 01'), findsOneWidget);
       expect(find.text('LESSON 02'), findsOneWidget);
       expect(find.text('LESSON 03'), findsOneWidget);
+      expect(find.text('01'), findsNothing);
+      expect(find.text('02'), findsNothing);
+      expect(find.text('03'), findsNothing);
 
       for (int index = 0; index < orderedLessons.length; index += 1) {
         final Finder card = find.byKey(Key('lesson_card_$index'));
@@ -90,6 +114,125 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 500));
       }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('keeps representative long titles readable', (
+      WidgetTester tester,
+    ) async {
+      final List<Lesson> longTitleLessons = <String>[
+            'Addition and Subtraction of Numbers up to 1,000,000',
+            'Multiplication, Division, and MDAS',
+            'Comparing, Adding, and Subtracting Fractions',
+            'Decimals and Their Relationship to Fractions',
+            'Place Value and Value of Decimal Digits',
+          ].indexed
+          .map(
+            ((int, String) entry) => _lesson(
+              'long-title-${entry.$1}',
+              entry.$2,
+              'Supporting lesson content.',
+            ),
+          )
+          .toList(growable: false);
+
+      for (final Size size in <Size>[
+        const Size(1024, 600),
+        const Size(1280, 720),
+        const Size(1280, 800),
+        const Size(1920, 1200),
+      ]) {
+        await _setLandscapeSize(tester, size);
+        await tester.pumpWidget(_testApp(lessons: longTitleLessons));
+        await tester.pumpAndSettle();
+
+        for (int index = 0; index < longTitleLessons.length; index += 1) {
+          final Finder card = find.byKey(Key('lesson_card_$index'));
+          await tester.ensureVisible(card);
+          await tester.pump();
+
+          final Rect titleRect = tester.getRect(
+            find.byKey(Key('lesson_title_$index')),
+          );
+          final Rect cardRect = tester.getRect(card);
+          final Rect visualRect = tester.getRect(
+            find.byKey(Key('lesson_topic_visual_$index')),
+          );
+          final Rect labelRect = tester.getRect(
+            find.byKey(Key('lesson_label_$index')),
+          );
+          final Text title = tester.widget<Text>(
+            find.byKey(Key('lesson_title_$index')),
+          );
+          expect(
+            visualRect.bottom,
+            lessThanOrEqualTo(titleRect.top),
+            reason: 'lesson $index at $size',
+          );
+          expect(
+            titleRect.top - visualRect.bottom,
+            inInclusiveRange(AppSpacing.xs, AppSpacing.sm),
+            reason: 'lesson title gap $index at $size',
+          );
+          expect(title.textAlign, TextAlign.center);
+          expect(title.maxLines, 2);
+          expect(
+            titleRect.center.dx,
+            closeTo(cardRect.center.dx, 0.1),
+            reason: 'lesson $index at $size',
+          );
+          expect(
+            visualRect.center.dx,
+            lessThan(cardRect.center.dx),
+            reason: 'lesson visual $index at $size',
+          );
+          expect(
+            labelRect.center.dx,
+            lessThan(cardRect.center.dx),
+            reason: 'lesson label $index at $size',
+          );
+          expect(
+            cardRect.bottom - titleRect.bottom,
+            greaterThanOrEqualTo(AppSpacing.md),
+            reason: 'lesson title bottom padding $index at $size',
+          );
+          expect(titleRect.height, greaterThan(0), reason: 'lesson $index');
+          expect(find.text(longTitleLessons[index].title), findsOneWidget);
+          expect(tester.takeException(), isNull, reason: 'viewport: $size');
+        }
+      }
+    });
+
+    testWidgets('uses topic visuals and a safe fallback for teacher lessons', (
+      WidgetTester tester,
+    ) async {
+      await _setLandscapeSize(tester, const Size(1280, 800));
+      final Lesson teacherLesson = _lesson(
+        'teacher-lesson',
+        'Teacher Verification Lesson Zeta 42',
+        'Teacher-created lesson content remains unchanged.',
+        ContentSourceType.teacher,
+      );
+
+      await tester.pumpWidget(
+        _testApp(lessons: <Lesson>[..._lessons.take(3), teacherLesson]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('+ \u2212'), findsOneWidget);
+      expect(find.text('< >'), findsOneWidget);
+      expect(find.text('\u00BD'), findsOneWidget);
+      expect(find.text(teacherLesson.title), findsOneWidget);
+      expect(find.byIcon(Icons.functions_rounded), findsOneWidget);
+
+      final Finder teacherCard = find.byKey(const Key('lesson_card_3'));
+      await tester.tap(teacherCard);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      final LessonViewerScreen viewer = tester.widget<LessonViewerScreen>(
+        find.byType(LessonViewerScreen),
+      );
+      expect(identical(viewer.lesson, teacherLesson), isTrue);
       expect(tester.takeException(), isNull);
     });
 
@@ -183,13 +326,18 @@ final List<Lesson> _lessons = <Lesson>[
   ),
 ];
 
-Lesson _lesson(String id, String title, String body) {
+Lesson _lesson(
+  String id,
+  String title,
+  String body, [
+  ContentSourceType sourceType = ContentSourceType.builtIn,
+]) {
   final DateTime timestamp = DateTime.utc(2026, 1, 1);
   return Lesson(
     id: id,
     title: title,
     body: body,
-    sourceType: ContentSourceType.builtIn,
+    sourceType: sourceType,
     createdAt: timestamp,
     updatedAt: timestamp,
   );

@@ -78,7 +78,7 @@ void main() {
         isTrue,
       );
 
-      await _fillForm(tester, confirmation: 'different-password');
+      await _fillForm(tester, confirmation: 'Different2!');
       expect(
         tester.widget<TextField>(find.byType(TextField).at(2)).obscureText,
         isTrue,
@@ -117,7 +117,7 @@ void main() {
       expect(authRepository.signUpCalls, 0);
     });
 
-    testWidgets('preserves empty and minimum-length validation', (
+    testWidgets('shows field-level required and password validation', (
       WidgetTester tester,
     ) async {
       _setDesktopViewport(tester);
@@ -132,7 +132,10 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('register_submit_button')));
       await tester.pump();
-      expect(find.text('Fill in every field.'), findsOneWidget);
+      expect(find.text('Enter your full name.'), findsOneWidget);
+      expect(find.text('Enter your email address.'), findsOneWidget);
+      expect(find.text('Enter a password.'), findsOneWidget);
+      expect(find.text('Confirm your password.'), findsOneWidget);
 
       await tester.enterText(
         find.byKey(const Key('register_full_name_field')),
@@ -156,10 +159,67 @@ void main() {
       await tester.tap(find.byKey(const Key('register_submit_button')));
       await tester.pump();
       expect(
-        find.text('Password must be at least 8 characters.'),
+        find.text('Use a password that meets every requirement below.'),
         findsOneWidget,
       );
       expect(authRepository.signUpCalls, 0);
+    });
+
+    testWidgets('rejects invalid names and malformed emails before signup', (
+      WidgetTester tester,
+    ) async {
+      _setDesktopViewport(tester);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final _FakeAuthRepository authRepository = _FakeAuthRepository();
+      await tester.pumpWidget(_testApp(authRepository));
+      await tester.pumpAndSettle();
+
+      await _fillForm(tester, fullName: 'Robert123', email: "' OR '1'='1");
+      await tester.ensureVisible(
+        find.byKey(const Key('register_submit_button')),
+      );
+      await tester.tap(find.byKey(const Key('register_submit_button')));
+      await tester.pump();
+
+      expect(
+        find.text('Name must contain letters and cannot contain numbers.'),
+        findsOneWidget,
+      );
+      expect(find.text('Enter a valid email address.'), findsOneWidget);
+      expect(authRepository.signUpCalls, 0);
+    });
+
+    testWidgets('updates every password requirement while typing', (
+      WidgetTester tester,
+    ) async {
+      _setDesktopViewport(tester);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(_testApp(_FakeAuthRepository()));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('register_password_field')),
+        'Password1!',
+      );
+      await tester.pump();
+
+      for (final String key in <String>[
+        'password_requirement_length',
+        'password_requirement_uppercase',
+        'password_requirement_lowercase',
+        'password_requirement_number',
+        'password_requirement_special',
+      ]) {
+        expect(
+          find.descendant(
+            of: find.byKey(Key(key)),
+            matching: find.byIcon(Icons.check_circle_rounded),
+          ),
+          findsOneWidget,
+        );
+      }
     });
 
     testWidgets('submits once, disables fields, and preserves server errors', (
@@ -171,7 +231,11 @@ void main() {
       final _FakeAuthRepository authRepository = _FakeAuthRepository();
       await tester.pumpWidget(_testApp(authRepository));
       await tester.pumpAndSettle();
-      await _fillForm(tester);
+      await _fillForm(
+        tester,
+        fullName: '  Ada Teacher  ',
+        email: '  Ada@BayMath.Test  ',
+      );
 
       await tester.tap(
         find.byKey(const Key('register_confirm_password_field')),
@@ -195,11 +259,44 @@ void main() {
       );
 
       authRepository.completeWith(
-        const ValidationFailure('This email is already registered.'),
+        const ValidationFailure('An account with this email already exists.'),
       );
       await tester.pumpAndSettle();
-      expect(find.text('This email is already registered.'), findsOneWidget);
+      expect(
+        find.text('An account with this email already exists.'),
+        findsOneWidget,
+      );
       expect(find.text('Create teacher account'), findsOneWidget);
+    });
+
+    testWidgets('shows safe network failure and restores the submit button', (
+      WidgetTester tester,
+    ) async {
+      _setDesktopViewport(tester);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final _FakeAuthRepository authRepository = _FakeAuthRepository();
+      await tester.pumpWidget(_testApp(authRepository));
+      await tester.pumpAndSettle();
+      await _fillForm(tester);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('register_submit_button')),
+      );
+      await tester.tap(find.byKey(const Key('register_submit_button')));
+      await tester.pump();
+      authRepository.completeWith(const NetworkFailure());
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Could not create the account. Check your internet connection and '
+          'try again.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Create teacher account'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }
@@ -211,19 +308,19 @@ void _setDesktopViewport(WidgetTester tester) {
 
 Future<void> _fillForm(
   WidgetTester tester, {
-  String confirmation = 'baymath-password',
+  String fullName = 'Ada Teacher',
+  String email = 'ada@baymath.test',
+  String password = 'Password1!',
+  String confirmation = 'Password1!',
 }) async {
   await tester.enterText(
     find.byKey(const Key('register_full_name_field')),
-    'Ada Teacher',
+    fullName,
   );
-  await tester.enterText(
-    find.byKey(const Key('register_email_field')),
-    'ada@baymath.test',
-  );
+  await tester.enterText(find.byKey(const Key('register_email_field')), email);
   await tester.enterText(
     find.byKey(const Key('register_password_field')),
-    'baymath-password',
+    password,
   );
   await tester.enterText(
     find.byKey(const Key('register_confirm_password_field')),

@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../errors/app_failure.dart';
 import '../errors/failure_mapper.dart';
 import '../models/section.dart';
 import '../models/student.dart';
@@ -133,8 +134,10 @@ class StudentsRepository {
   Future<List<Student>> fetchByIds(List<String> ids) async {
     if (ids.isEmpty) return const [];
     try {
-      final List<Map<String, dynamic>> data =
-          await _client.from('students').select(_publicColumns).inFilter('id', ids);
+      final List<Map<String, dynamic>> data = await _client
+          .from('students')
+          .select(_publicColumns)
+          .inFilter('id', ids);
       return data.map(Student.fromJson).toList();
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -202,12 +205,18 @@ class StudentsRepository {
     try {
       final FunctionResponse response = await _client.functions.invoke(
         'create-students-bulk',
-        body: <String, dynamic>{'section_id': sectionId, 'full_names': fullNames},
+        body: <String, dynamic>{
+          'section_id': sectionId,
+          'full_names': fullNames,
+        },
       );
       final Map<String, dynamic> data = response.data as Map<String, dynamic>;
       final List<dynamic> results = data['results'] as List<dynamic>;
       return results
-          .map((dynamic row) => BulkCreateStudentResult.fromJson(row as Map<String, dynamic>))
+          .map(
+            (dynamic row) =>
+                BulkCreateStudentResult.fromJson(row as Map<String, dynamic>),
+          )
           .toList();
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -217,11 +226,17 @@ class StudentsRepository {
   /// Sets/resets [studentId]'s password via the `set-student-password` Edge
   /// Function (wraps `app.set_student_password`, 0017 — ownership-checked
   /// and audit-logged server-side).
-  Future<void> resetPassword({required String studentId, required String newPassword}) async {
+  Future<void> resetPassword({
+    required String studentId,
+    required String newPassword,
+  }) async {
     try {
       await _client.functions.invoke(
         'set-student-password',
-        body: <String, dynamic>{'student_id': studentId, 'new_password': newPassword},
+        body: <String, dynamic>{
+          'student_id': studentId,
+          'new_password': newPassword,
+        },
       );
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -251,7 +266,10 @@ class StudentsRepository {
   /// exact enrollment-side effect.
   Future<void> archiveStudent(String studentId) async {
     try {
-      await _client.rpc<void>('archive_student', params: {'p_student_id': studentId});
+      await _client.rpc<void>(
+        'archive_student',
+        params: {'p_student_id': studentId},
+      );
     } catch (error) {
       throw mapExceptionToFailure(error);
     }
@@ -267,7 +285,38 @@ class StudentsRepository {
   /// calling this, rather than relying solely on this exception.
   Future<void> restoreStudent(String studentId) async {
     try {
-      await _client.rpc<void>('restore_student', params: {'p_student_id': studentId});
+      await _client.rpc<void>(
+        'restore_student',
+        params: {'p_student_id': studentId},
+      );
+    } catch (error) {
+      throw mapExceptionToFailure(error);
+    }
+  }
+
+  /// Permanently removes an archived custom Student identity and its
+  /// intentionally tied enrollment, progress, quiz-result, and endless-quiz
+  /// rows in one Admin-only database transaction.
+  Future<void> deleteStudentPermanently(String studentId) async {
+    try {
+      final String result = await _client.rpc<String>(
+        'delete_archived_student',
+        params: <String, dynamic>{'p_student_id': studentId},
+      );
+      switch (result) {
+        case 'deleted':
+          return;
+        case 'not_archived':
+          throw const ValidationFailure(
+            'Only archived Student accounts can be permanently deleted.',
+          );
+        case 'not_found':
+          throw const NotFoundFailure('This Student account no longer exists.');
+        case 'not_authorized':
+          throw const NotAuthorizedFailure();
+        default:
+          throw const ServerFailure();
+      }
     } catch (error) {
       throw mapExceptionToFailure(error);
     }
@@ -295,15 +344,19 @@ class StudentsRepository {
   /// provider in `supabase_providers.dart` builds straight off
   /// `SupabaseClient`), so the section batch-lookup is done directly
   /// against `_client` rather than reaching for `SectionsRepository`.
-  Future<List<StudentWithSection>> fetchAllWithSection({StudentStatus? status}) async {
+  Future<List<StudentWithSection>> fetchAllWithSection({
+    StudentStatus? status,
+  }) async {
     try {
-      final PostgrestFilterBuilder<List<Map<String, dynamic>>> query =
-          _client.from('students').select(_publicColumns);
+      final PostgrestFilterBuilder<List<Map<String, dynamic>>> query = _client
+          .from('students')
+          .select(_publicColumns);
       final PostgrestFilterBuilder<List<Map<String, dynamic>>> filtered =
           status == null ? query : query.eq('status', status.name);
 
-      final List<Map<String, dynamic>> studentRows =
-          await filtered.order('full_name');
+      final List<Map<String, dynamic>> studentRows = await filtered.order(
+        'full_name',
+      );
       final List<Student> students = studentRows.map(Student.fromJson).toList();
       if (students.isEmpty) return const [];
 

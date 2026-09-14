@@ -21,6 +21,16 @@ class EnvConfig {
 
   static String get supabaseAnonKey => _require('SUPABASE_ANON_KEY');
 
+  /// Public, hosted Flutter Web route used by Supabase Auth recovery emails.
+  /// This is configuration, not a secret. It remains optional at bootstrap so
+  /// Student builds and staff sign-in still start before deployment is wired;
+  /// the Forgot Password screen fails safely when it is absent.
+  static String? get staffPasswordResetRedirectUrl {
+    final String? value =
+        dotenv.env['STAFF_PASSWORD_RESET_REDIRECT_URL']?.trim();
+    return value == null || value.isEmpty ? null : value;
+  }
+
   static String _require(String key) {
     final String? value = dotenv.env[key];
     if (value == null || value.isEmpty) {

@@ -1,6 +1,24 @@
 import 'content_source_type.dart';
 import 'section.dart';
 
+enum LessonPublicationStatus {
+  draft,
+  published;
+
+  static LessonPublicationStatus fromDb(String value) => switch (value) {
+    'draft' => LessonPublicationStatus.draft,
+    'published' => LessonPublicationStatus.published,
+    _ => throw ArgumentError('Unknown lesson publication status: $value'),
+  };
+
+  String toDb() => name;
+
+  String get label => switch (this) {
+    LessonPublicationStatus.draft => 'Draft',
+    LessonPublicationStatus.published => 'Published',
+  };
+}
+
 /// A Dart-side mirror of one `public.lessons` row — built-in or
 /// teacher-created instructional content. Never a prerequisite for
 /// anything else (schema §7.3) — quizzes are deliberately independent of
@@ -15,6 +33,7 @@ class Lesson {
     this.createdBy,
     this.gradeLevel,
     this.linkedQuizId,
+    this.publicationStatus = LessonPublicationStatus.published,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -36,6 +55,7 @@ class Lesson {
   /// Quiz" suggestion at the end of the lesson — never required to
   /// complete either the lesson or the quiz; see 0032's column comment.
   final String? linkedQuizId;
+  final LessonPublicationStatus publicationStatus;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -46,10 +66,14 @@ class Lesson {
       body: json['body'] as String,
       sourceType: ContentSourceType.fromDb(json['source_type'] as String),
       createdBy: json['created_by'] as String?,
-      gradeLevel: json['grade_level'] == null
-          ? null
-          : GradeLevel.fromDb(json['grade_level'] as String),
+      gradeLevel:
+          json['grade_level'] == null
+              ? null
+              : GradeLevel.fromDb(json['grade_level'] as String),
       linkedQuizId: json['linked_quiz_id'] as String?,
+      publicationStatus: LessonPublicationStatus.fromDb(
+        json['publication_status'] as String? ?? 'published',
+      ),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );

@@ -23,6 +23,16 @@ final class NetworkFailure extends AppFailure {
   ]);
 }
 
+/// Supabase rejected a burst of authentication requests. Kept distinct so
+/// recovery screens can offer a useful retry-later message without exposing
+/// account existence or raw provider details.
+final class RateLimitFailure extends AppFailure {
+  const RateLimitFailure([
+    super.message =
+        'Too many requests. Please wait a few minutes before trying again.',
+  ]);
+}
+
 /// The current session is no longer valid (expired, revoked, or malformed).
 /// Triggers the Unified Session-Expiration Policy (Phase 4.1 architecture,
 /// §3) — sessionProvider transitions to "expired" as this failure is
@@ -30,6 +40,16 @@ final class NetworkFailure extends AppFailure {
 final class SessionExpiredFailure extends AppFailure {
   const SessionExpiredFailure([
     super.message = 'Your session has expired. Please log in again.',
+  ]);
+}
+
+/// A password-recovery URL could not establish a valid recovery session.
+/// Invalid, expired, and already-used links intentionally share one message.
+final class RecoveryLinkFailure extends AppFailure {
+  const RecoveryLinkFailure([
+    super.message =
+        'This password reset link is invalid, expired, or has already been '
+            'used. Request a new link and try again.',
   ]);
 }
 
@@ -51,9 +71,7 @@ final class NotAuthorizedFailure extends AppFailure {
 /// The requested row/resource does not exist (or is not visible to the
 /// caller, which — by RLS design — looks identical from the outside).
 final class NotFoundFailure extends AppFailure {
-  const NotFoundFailure([
-    super.message = 'The requested item was not found.',
-  ]);
+  const NotFoundFailure([super.message = 'The requested item was not found.']);
 }
 
 /// Anything unexpected. Logged for diagnosis; never shows a raw stack

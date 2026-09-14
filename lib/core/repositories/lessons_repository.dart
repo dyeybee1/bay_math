@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../errors/failure_mapper.dart';
@@ -17,13 +19,17 @@ class LessonsRepository {
 
   final SupabaseClient _client;
 
+  static const String lessonImagesBucket = 'lesson-images';
+
   /// Built-in lessons plus the calling Teacher's own — RLS
   /// (`lessons_teacher_select`) already restricts the result to exactly
   /// that set, so no `.eq(...)` filter is added here.
   Future<List<Lesson>> fetchVisibleToTeacher() async {
     try {
-      final List<Map<String, dynamic>> data =
-          await _client.from('lessons').select().order('title', ascending: true);
+      final List<Map<String, dynamic>> data = await _client
+          .from('lessons')
+          .select()
+          .order('title', ascending: true);
       return data.map(Lesson.fromJson).toList();
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -36,16 +42,17 @@ class LessonsRepository {
     required String createdBy,
   }) async {
     try {
-      final Map<String, dynamic> row = await _client
-          .from('lessons')
-          .insert({
-            'title': title,
-            'body': body,
-            'source_type': 'teacher',
-            'created_by': createdBy,
-          })
-          .select('id')
-          .single();
+      final Map<String, dynamic> row =
+          await _client
+              .from('lessons')
+              .insert({
+                'title': title,
+                'body': body,
+                'source_type': 'teacher',
+                'created_by': createdBy,
+              })
+              .select('id')
+              .single();
       return row['id'] as String;
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -62,6 +69,83 @@ class LessonsRepository {
           .from('lessons')
           .update({'title': title, 'body': body})
           .eq('id', lessonId);
+    } catch (error) {
+      throw mapExceptionToFailure(error);
+    }
+  }
+
+  /// Atomically persists one composed lesson, its ordered content blocks,
+  /// publication state, and section audience through migration 0089's
+  /// security-invoker RPC.
+  Future<String> saveComposedLesson({
+    String? lessonId,
+    required String title,
+    required String summary,
+    required LessonPublicationStatus publicationStatus,
+    required List<String> sectionIds,
+    required List<LessonPageInput> blocks,
+  }) async {
+    try {
+      final String data = await _client.rpc<String>(
+        'save_teacher_lesson',
+        params: <String, dynamic>{
+          'p_lesson_id': lessonId,
+          'p_title': title,
+          'p_summary': summary,
+          'p_publication_status': publicationStatus.toDb(),
+          'p_section_ids': sectionIds,
+          'p_blocks':
+              blocks.map((LessonPageInput block) => block.toJson()).toList(),
+        },
+      );
+      return data;
+    } catch (error) {
+      throw mapExceptionToFailure(error);
+    }
+  }
+
+  Future<({String path, String publicUrl})> uploadLessonImage({
+    required String teacherId,
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    try {
+      final String extension =
+          fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+      final String contentType = switch (extension) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'gif' => 'image/gif',
+        _ =>
+          throw const FormatException('Choose a JPG, PNG, WebP, or GIF image.'),
+      };
+      final String safeName = fileName.replaceAll(
+        RegExp(r'[^A-Za-z0-9._-]'),
+        '_',
+      );
+      final String path =
+          '$teacherId/${DateTime.now().microsecondsSinceEpoch}_$safeName';
+      await _client.storage
+          .from(lessonImagesBucket)
+          .uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(contentType: contentType, upsert: false),
+          );
+      return (
+        path: path,
+        publicUrl: _client.storage.from(lessonImagesBucket).getPublicUrl(path),
+      );
+    } catch (error) {
+      throw mapExceptionToFailure(error);
+    }
+  }
+
+  Future<void> removeLessonImages(List<String> paths) async {
+    if (paths.isEmpty) return;
+    try {
+      await _client.storage.from(lessonImagesBucket).remove(paths);
     } catch (error) {
       throw mapExceptionToFailure(error);
     }
@@ -123,7 +207,10 @@ class LessonsRepository {
     }
   }
 
-  Future<void> unassign({required String lessonId, required String sectionId}) async {
+  Future<void> unassign({
+    required String lessonId,
+    required String sectionId,
+  }) async {
     try {
       await _client
           .from('lesson_sections')

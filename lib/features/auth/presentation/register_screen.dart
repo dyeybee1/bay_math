@@ -7,6 +7,7 @@ import '../../../app/constants/app_spacing.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/providers/session_provider.dart';
 import '../../../core/providers/supabase_providers.dart';
+import '../../../core/validation/teacher_registration_validators.dart';
 import 'widgets/auth_presentation.dart';
 
 /// Teacher self-registration. The existing repository and router continue to
@@ -19,6 +20,7 @@ class RegisterScreen extends ConsumerStatefulWidget {
 }
 
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -33,6 +35,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmation = true;
   String? _errorText;
+  String? _emailServerError;
 
   static const double _twoColumnBreakpoint = 860;
   static const double _maxShellWidth = 1180;
@@ -53,36 +56,27 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Future<void> _submit() async {
     if (_isSubmitting || ref.read(sessionProvider).isLoading) return;
 
-    final String fullName = _fullNameController.text.trim();
-    final String email = _emailController.text.trim();
-    final String password = _passwordController.text;
-    final String confirmPassword = _confirmPasswordController.text;
+    setState(() {
+      _errorText = null;
+      _emailServerError = null;
+    });
 
-    if (fullName.isEmpty || email.isEmpty || password.isEmpty) {
-      setState(() => _errorText = 'Fill in every field.');
-      if (fullName.isEmpty) {
-        _fullNameFocusNode.requestFocus();
-      } else if (email.isEmpty) {
-        _emailFocusNode.requestFocus();
-      } else {
-        _passwordFocusNode.requestFocus();
-      }
+    final bool isValid = _formKey.currentState?.validate() ?? false;
+    if (!isValid) {
+      _focusFirstInvalidField();
       return;
     }
-    if (password.length < 8) {
-      setState(() => _errorText = 'Password must be at least 8 characters.');
-      _passwordFocusNode.requestFocus();
-      return;
-    }
-    if (password != confirmPassword) {
-      setState(() => _errorText = 'Passwords do not match.');
-      _confirmPasswordFocusNode.requestFocus();
-      return;
-    }
+
+    final String fullName = TeacherRegistrationValidators.normalizeName(
+      _fullNameController.text,
+    );
+    final String email = TeacherRegistrationValidators.normalizeEmail(
+      _emailController.text,
+    );
+    final String password = _passwordController.text;
 
     setState(() {
       _isSubmitting = true;
-      _errorText = null;
     });
 
     try {
@@ -93,9 +87,53 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       // resolved immediately after account creation.
       ref.read(sessionProvider.notifier).refresh();
     } on AppFailure catch (failure) {
-      if (mounted) setState(() => _errorText = failure.message);
+      if (!mounted) return;
+      final bool isExistingEmail =
+          failure is ValidationFailure &&
+          failure.message.toLowerCase().contains('email') &&
+          (failure.message.toLowerCase().contains('exists') ||
+              failure.message.toLowerCase().contains('registered'));
+      setState(() {
+        if (isExistingEmail) {
+          _emailServerError = 'An account with this email already exists.';
+        } else if (failure is NetworkFailure) {
+          _errorText =
+              'Could not create the account. Check your internet connection '
+              'and try again.';
+        } else if (failure is ServerFailure) {
+          _errorText =
+              'Something went wrong while creating the account. Please try '
+              'again.';
+        } else {
+          _errorText = failure.message;
+        }
+      });
+      if (isExistingEmail) {
+        _formKey.currentState?.validate();
+        _emailFocusNode.requestFocus();
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  void _focusFirstInvalidField() {
+    if (TeacherRegistrationValidators.validateName(_fullNameController.text) !=
+        null) {
+      _fullNameFocusNode.requestFocus();
+    } else if (TeacherRegistrationValidators.validateEmail(
+              _emailController.text,
+            ) !=
+            null ||
+        _emailServerError != null) {
+      _emailFocusNode.requestFocus();
+    } else if (TeacherRegistrationValidators.validatePassword(
+          _passwordController.text,
+        ) !=
+        null) {
+      _passwordFocusNode.requestFocus();
+    } else {
+      _confirmPasswordFocusNode.requestFocus();
     }
   }
 
@@ -167,6 +205,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     required double shellHeight,
   }) {
     final Widget formPanel = _RegistrationPanel(
+      formKey: _formKey,
       fullNameController: _fullNameController,
       emailController: _emailController,
       passwordController: _passwordController,
@@ -176,10 +215,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       passwordFocusNode: _passwordFocusNode,
       confirmPasswordFocusNode: _confirmPasswordFocusNode,
       disabled: disabled,
-      isSubmitting: disabled,
+      isSubmitting: _isSubmitting,
       obscurePassword: _obscurePassword,
       obscureConfirmation: _obscureConfirmation,
       errorText: _errorText,
+      emailServerError: _emailServerError,
       compactHeight: compactHeight,
       onSubmit: _submit,
       onBack: () => context.pop(),
@@ -188,6 +228,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       },
       onToggleConfirmation: () {
         setState(() => _obscureConfirmation = !_obscureConfirmation);
+      },
+      onPasswordChanged: (_) {
+        setState(() {});
+        if (_confirmPasswordController.text.isNotEmpty) {
+          _formKey.currentState?.validate();
+        }
+      },
+      onEmailChanged: (_) {
+        if (_emailServerError != null) {
+          setState(() => _emailServerError = null);
+        }
       },
     );
 
@@ -220,6 +271,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
 class _RegistrationPanel extends StatelessWidget {
   const _RegistrationPanel({
+    required this.formKey,
     required this.fullNameController,
     required this.emailController,
     required this.passwordController,
@@ -233,13 +285,17 @@ class _RegistrationPanel extends StatelessWidget {
     required this.obscurePassword,
     required this.obscureConfirmation,
     required this.errorText,
+    required this.emailServerError,
     required this.compactHeight,
     required this.onSubmit,
     required this.onBack,
     required this.onTogglePassword,
     required this.onToggleConfirmation,
+    required this.onPasswordChanged,
+    required this.onEmailChanged,
   });
 
+  final GlobalKey<FormState> formKey;
   final TextEditingController fullNameController;
   final TextEditingController emailController;
   final TextEditingController passwordController;
@@ -253,11 +309,14 @@ class _RegistrationPanel extends StatelessWidget {
   final bool obscurePassword;
   final bool obscureConfirmation;
   final String? errorText;
+  final String? emailServerError;
   final bool compactHeight;
   final VoidCallback onSubmit;
   final VoidCallback onBack;
   final VoidCallback onTogglePassword;
   final VoidCallback onToggleConfirmation;
+  final ValueChanged<String> onPasswordChanged;
+  final ValueChanged<String> onEmailChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -275,215 +334,245 @@ class _RegistrationPanel extends StatelessWidget {
         child: FocusTraversalGroup(
           policy: OrderedTraversalPolicy(),
           child: AutofillGroup(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    FocusTraversalOrder(
-                      order: const NumericFocusOrder(1),
-                      child: TextButton.icon(
-                        key: const Key('register_back_button'),
-                        onPressed: disabled ? null : onBack,
-                        style: TextButton.styleFrom(
-                          foregroundColor: AuthPalette.navy,
-                          minimumSize: const Size(0, 40),
-                          padding: const EdgeInsets.only(right: AppSpacing.sm),
-                        ),
-                        icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                        label: const Text('Back to sign in'),
-                      ),
-                    ),
-                    const Spacer(),
-                    AuthBrandLogo(width: compactHeight ? 174 : 190),
-                  ],
-                ),
-                SizedBox(height: compactHeight ? 14 : 20),
-                const Text(
-                  'TEACHER REGISTRATION',
-                  style: TextStyle(
-                    color: AuthPalette.primaryMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.25,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Create your teacher account',
-                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: AuthPalette.ink,
-                    fontSize: compactHeight ? 27 : 30,
-                    fontWeight: FontWeight.w700,
-                    height: 1.1,
-                    letterSpacing: -0.45,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Set up your profile for access to the BayMath educator '
-                  'workspace.',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    height: 1.45,
-                  ),
-                ),
-                SizedBox(height: compactHeight ? 14 : 20),
-                const AuthFieldLabel(label: 'Full name'),
-                const SizedBox(height: 6),
-                FocusTraversalOrder(
-                  order: const NumericFocusOrder(2),
-                  child: AuthTextField(
-                    key: const Key('register_full_name_field'),
-                    controller: fullNameController,
-                    focusNode: fullNameFocusNode,
-                    enabled: !disabled,
-                    hintText: 'Your full name',
-                    semanticLabel: 'Full name',
-                    prefixIcon: Icons.person_outline_rounded,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const <String>[AutofillHints.name],
-                    onSubmitted: (_) => emailFocusNode.requestFocus(),
-                  ),
-                ),
-                SizedBox(height: fieldGap),
-                const AuthFieldLabel(label: 'Email address'),
-                const SizedBox(height: 6),
-                FocusTraversalOrder(
-                  order: const NumericFocusOrder(3),
-                  child: AuthTextField(
-                    key: const Key('register_email_field'),
-                    controller: emailController,
-                    focusNode: emailFocusNode,
-                    enabled: !disabled,
-                    hintText: 'name@school.edu',
-                    semanticLabel: 'Email address',
-                    prefixIcon: Icons.mail_outline_rounded,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const <String>[
-                      AutofillHints.username,
-                      AutofillHints.email,
-                    ],
-                    onSubmitted: (_) => passwordFocusNode.requestFocus(),
-                  ),
-                ),
-                SizedBox(height: fieldGap),
-                const AuthFieldLabel(label: 'Password'),
-                const SizedBox(height: 6),
-                FocusTraversalOrder(
-                  order: const NumericFocusOrder(4),
-                  child: AuthTextField(
-                    key: const Key('register_password_field'),
-                    controller: passwordController,
-                    focusNode: passwordFocusNode,
-                    enabled: !disabled,
-                    hintText: 'At least 8 characters',
-                    semanticLabel: 'Password',
-                    prefixIcon: Icons.lock_outline_rounded,
-                    obscureText: obscurePassword,
-                    enableSuggestions: false,
-                    autocorrect: false,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const <String>[AutofillHints.newPassword],
-                    suffix: AuthPasswordVisibilityButton(
-                      key: const Key('register_password_visibility'),
-                      obscurePassword: obscurePassword,
-                      enabled: !disabled,
-                      onPressed: onTogglePassword,
-                    ),
-                    onSubmitted: (_) => confirmPasswordFocusNode.requestFocus(),
-                  ),
-                ),
-                SizedBox(height: fieldGap),
-                const AuthFieldLabel(label: 'Confirm password'),
-                const SizedBox(height: 6),
-                FocusTraversalOrder(
-                  order: const NumericFocusOrder(5),
-                  child: AuthTextField(
-                    key: const Key('register_confirm_password_field'),
-                    controller: confirmPasswordController,
-                    focusNode: confirmPasswordFocusNode,
-                    enabled: !disabled,
-                    hintText: 'Re-enter your password',
-                    semanticLabel: 'Confirm password',
-                    prefixIcon: Icons.lock_outline_rounded,
-                    obscureText: obscureConfirmation,
-                    enableSuggestions: false,
-                    autocorrect: false,
-                    textInputAction: TextInputAction.done,
-                    autofillHints: const <String>[AutofillHints.newPassword],
-                    suffix: AuthPasswordVisibilityButton(
-                      key: const Key('register_confirmation_visibility'),
-                      fieldName: 'password confirmation',
-                      obscurePassword: obscureConfirmation,
-                      enabled: !disabled,
-                      onPressed: onToggleConfirmation,
-                    ),
-                    onSubmitted: (_) {
-                      if (!disabled) onSubmit();
-                    },
-                  ),
-                ),
-                const SizedBox(height: 12),
-                AuthFormNotice(
-                  key:
-                      errorText == null
-                          ? null
-                          : const Key('register_error_message'),
-                  guidance:
-                      'An Administrator must approve your account before '
-                      'workspace access begins.',
-                  errorText: errorText,
-                ),
-                SizedBox(height: compactHeight ? 12 : 16),
-                FocusTraversalOrder(
-                  order: const NumericFocusOrder(6),
-                  child: AuthPrimaryButton(
-                    key: const Key('register_submit_button'),
-                    label: 'Create teacher account',
-                    loadingLabel: 'Creating account…',
-                    isLoading: isSubmitting,
-                    onPressed: disabled ? null : onSubmit,
-                  ),
-                ),
-                SizedBox(height: compactHeight ? 10 : 14),
-                Container(
-                  padding: const EdgeInsets.only(top: 10),
-                  decoration: const BoxDecoration(
-                    border: Border(top: BorderSide(color: Color(0xFFE3E9EE))),
-                  ),
-                  child: Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: AppSpacing.xs,
-                    runSpacing: AppSpacing.xs,
+            child: Form(
+              key: formKey,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
                     children: <Widget>[
-                      Text(
-                        'Already have an account?',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
                       FocusTraversalOrder(
-                        order: const NumericFocusOrder(7),
-                        child: TextButton(
-                          key: const Key('register_login_button'),
+                        order: const NumericFocusOrder(1),
+                        child: TextButton.icon(
+                          key: const Key('register_back_button'),
                           onPressed: disabled ? null : onBack,
                           style: TextButton.styleFrom(
-                            foregroundColor: AuthPalette.primary,
+                            foregroundColor: AuthPalette.navy,
                             minimumSize: const Size(0, 40),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.sm,
+                            padding: const EdgeInsets.only(
+                              right: AppSpacing.sm,
                             ),
                           ),
-                          child: const Text('Sign in'),
+                          icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                          label: const Text('Back to sign in'),
                         ),
                       ),
+                      const Spacer(),
+                      AuthBrandLogo(width: compactHeight ? 174 : 190),
                     ],
                   ),
-                ),
-              ],
+                  SizedBox(height: compactHeight ? 14 : 20),
+                  const Text(
+                    'TEACHER REGISTRATION',
+                    style: TextStyle(
+                      color: AuthPalette.primaryMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Create your teacher account',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      color: AuthPalette.ink,
+                      fontSize: compactHeight ? 27 : 30,
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
+                      letterSpacing: -0.45,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Set up your profile for access to the BayMath educator '
+                    'workspace.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      height: 1.45,
+                    ),
+                  ),
+                  SizedBox(height: compactHeight ? 14 : 20),
+                  const AuthFieldLabel(label: 'Full name'),
+                  const SizedBox(height: 6),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(2),
+                    child: AuthTextField(
+                      key: const Key('register_full_name_field'),
+                      controller: fullNameController,
+                      focusNode: fullNameFocusNode,
+                      enabled: !disabled,
+                      hintText: 'Your full name',
+                      semanticLabel: 'Full name',
+                      prefixIcon: Icons.person_outline_rounded,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const <String>[AutofillHints.name],
+                      maxLength: TeacherRegistrationValidators.nameMaxLength,
+                      textCapitalization: TextCapitalization.words,
+                      validator: TeacherRegistrationValidators.validateName,
+                      onSubmitted: (_) => emailFocusNode.requestFocus(),
+                    ),
+                  ),
+                  SizedBox(height: fieldGap),
+                  const AuthFieldLabel(label: 'Email address'),
+                  const SizedBox(height: 6),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(3),
+                    child: AuthTextField(
+                      key: const Key('register_email_field'),
+                      controller: emailController,
+                      focusNode: emailFocusNode,
+                      enabled: !disabled,
+                      hintText: 'name@school.edu',
+                      semanticLabel: 'Email address',
+                      prefixIcon: Icons.mail_outline_rounded,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const <String>[
+                        AutofillHints.username,
+                        AutofillHints.email,
+                      ],
+                      maxLength: TeacherRegistrationValidators.emailMaxLength,
+                      validator: TeacherRegistrationValidators.validateEmail,
+                      forceErrorText: emailServerError,
+                      onChanged: onEmailChanged,
+                      onSubmitted: (_) => passwordFocusNode.requestFocus(),
+                    ),
+                  ),
+                  SizedBox(height: fieldGap),
+                  const AuthFieldLabel(label: 'Password'),
+                  const SizedBox(height: 6),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(4),
+                    child: AuthTextField(
+                      key: const Key('register_password_field'),
+                      controller: passwordController,
+                      focusNode: passwordFocusNode,
+                      enabled: !disabled,
+                      hintText: 'At least 8 characters',
+                      semanticLabel: 'Password',
+                      prefixIcon: Icons.lock_outline_rounded,
+                      obscureText: obscurePassword,
+                      enableSuggestions: false,
+                      autocorrect: false,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const <String>[AutofillHints.newPassword],
+                      maxLength:
+                          TeacherRegistrationValidators.passwordMaxLength,
+                      validator: TeacherRegistrationValidators.validatePassword,
+                      suffix: AuthPasswordVisibilityButton(
+                        key: const Key('register_password_visibility'),
+                        obscurePassword: obscurePassword,
+                        enabled: !disabled,
+                        onPressed: onTogglePassword,
+                      ),
+                      onChanged: onPasswordChanged,
+                      onSubmitted:
+                          (_) => confirmPasswordFocusNode.requestFocus(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  AuthPasswordRequirements(
+                    key: const Key('register_password_requirements'),
+                    password: passwordController.text,
+                  ),
+                  SizedBox(height: fieldGap),
+                  const AuthFieldLabel(label: 'Confirm password'),
+                  const SizedBox(height: 6),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(5),
+                    child: AuthTextField(
+                      key: const Key('register_confirm_password_field'),
+                      controller: confirmPasswordController,
+                      focusNode: confirmPasswordFocusNode,
+                      enabled: !disabled,
+                      hintText: 'Re-enter your password',
+                      semanticLabel: 'Confirm password',
+                      prefixIcon: Icons.lock_outline_rounded,
+                      obscureText: obscureConfirmation,
+                      enableSuggestions: false,
+                      autocorrect: false,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const <String>[AutofillHints.newPassword],
+                      maxLength:
+                          TeacherRegistrationValidators.passwordMaxLength,
+                      validator:
+                          (String? value) =>
+                              TeacherRegistrationValidators.validateConfirmPassword(
+                                value,
+                                passwordController.text,
+                              ),
+                      suffix: AuthPasswordVisibilityButton(
+                        key: const Key('register_confirmation_visibility'),
+                        fieldName: 'password confirmation',
+                        obscurePassword: obscureConfirmation,
+                        enabled: !disabled,
+                        onPressed: onToggleConfirmation,
+                      ),
+                      onSubmitted: (_) {
+                        if (!disabled) onSubmit();
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  AuthFormNotice(
+                    key:
+                        errorText == null
+                            ? null
+                            : const Key('register_error_message'),
+                    guidance:
+                        'An Administrator must approve your account before '
+                        'workspace access begins.',
+                    errorText: errorText,
+                  ),
+                  SizedBox(height: compactHeight ? 12 : 16),
+                  FocusTraversalOrder(
+                    order: const NumericFocusOrder(6),
+                    child: AuthPrimaryButton(
+                      key: const Key('register_submit_button'),
+                      label: 'Create teacher account',
+                      loadingLabel: 'Creating account…',
+                      isLoading: isSubmitting,
+                      onPressed: disabled ? null : onSubmit,
+                    ),
+                  ),
+                  SizedBox(height: compactHeight ? 10 : 14),
+                  Container(
+                    padding: const EdgeInsets.only(top: 10),
+                    decoration: const BoxDecoration(
+                      border: Border(top: BorderSide(color: Color(0xFFE3E9EE))),
+                    ),
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: AppSpacing.xs,
+                      runSpacing: AppSpacing.xs,
+                      children: <Widget>[
+                        Text(
+                          'Already have an account?',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
+                        ),
+                        FocusTraversalOrder(
+                          order: const NumericFocusOrder(7),
+                          child: TextButton(
+                            key: const Key('register_login_button'),
+                            onPressed: disabled ? null : onBack,
+                            style: TextButton.styleFrom(
+                              foregroundColor: AuthPalette.primary,
+                              minimumSize: const Size(0, 40),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.sm,
+                              ),
+                            ),
+                            child: const Text('Sign in'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

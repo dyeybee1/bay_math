@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../app/constants/app_radius.dart';
 import '../../../../app/constants/app_spacing.dart';
 import '../../../../app/theme/adult_workspace_colors.dart';
+import '../../../../core/validation/teacher_registration_validators.dart';
 
 /// Semantic presentation roles for the adult Teacher/Administrator Auth flow.
 ///
@@ -19,6 +21,62 @@ abstract final class AuthPalette {
   static const Color gold = AdultWorkspaceColors.gold;
   static const Color fieldFill = AdultWorkspaceColors.fieldFill;
   static const Color outline = AdultWorkspaceColors.outline;
+}
+
+/// Responsive centered canvas for focused staff-auth tasks such as password
+/// recovery. It keeps the same visual language as login and registration.
+class AuthCenteredPage extends StatelessWidget {
+  const AuthCenteredPage({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AuthPalette.canvas,
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double horizontalPadding =
+                  constraints.maxWidth < 600 ? AppSpacing.md : AppSpacing.xl;
+              return SingleChildScrollView(
+                padding: EdgeInsets.symmetric(
+                  horizontal: horizontalPadding,
+                  vertical: AppSpacing.xl,
+                ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: (constraints.maxHeight - (AppSpacing.xl * 2))
+                        .clamp(0, double.infinity),
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 590),
+                      child: AuthShellSurface(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal:
+                                constraints.maxWidth < 600
+                                    ? AppSpacing.lg
+                                    : AppSpacing.xxl,
+                            vertical: AppSpacing.xl,
+                          ),
+                          child: child,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class AuthShellSurface extends StatelessWidget {
@@ -106,6 +164,10 @@ class AuthTextField extends StatelessWidget {
     this.autocorrect = true,
     this.suffix,
     this.onChanged,
+    this.validator,
+    this.forceErrorText,
+    this.maxLength,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   final TextEditingController controller;
@@ -123,6 +185,10 @@ class AuthTextField extends StatelessWidget {
   final bool autocorrect;
   final Widget? suffix;
   final ValueChanged<String>? onChanged;
+  final FormFieldValidator<String>? validator;
+  final String? forceErrorText;
+  final int? maxLength;
+  final TextCapitalization textCapitalization;
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +201,7 @@ class AuthTextField extends StatelessWidget {
     return Semantics(
       textField: true,
       label: semanticLabel,
-      child: TextField(
+      child: TextFormField(
         controller: controller,
         focusNode: focusNode,
         enabled: enabled,
@@ -145,8 +211,13 @@ class AuthTextField extends StatelessWidget {
         keyboardType: keyboardType,
         textInputAction: textInputAction,
         autofillHints: autofillHints,
-        onSubmitted: onSubmitted,
+        onFieldSubmitted: onSubmitted,
         onChanged: onChanged,
+        validator: validator,
+        forceErrorText: forceErrorText,
+        maxLength: maxLength,
+        maxLengthEnforcement: MaxLengthEnforcement.none,
+        textCapitalization: textCapitalization,
         style: Theme.of(
           context,
         ).textTheme.bodyLarge?.copyWith(color: AuthPalette.ink),
@@ -165,6 +236,8 @@ class AuthTextField extends StatelessWidget {
           prefixIcon: Icon(prefixIcon, size: 20),
           prefixIconColor: const Color(0xFF647C8D),
           suffixIcon: suffix,
+          counterText: '',
+          errorMaxLines: 2,
           border: baseBorder,
           enabledBorder: baseBorder,
           disabledBorder: baseBorder.copyWith(
@@ -338,6 +411,131 @@ class AuthPrimaryButton extends StatelessWidget {
                     ],
                   ),
         ),
+      ),
+    );
+  }
+}
+
+/// Shared live password-policy display used by registration and recovery.
+class AuthPasswordRequirements extends StatelessWidget {
+  const AuthPasswordRequirements({
+    super.key,
+    required this.password,
+    this.requirementKeyPrefix = 'password_requirement',
+  });
+
+  final String password;
+  final String requirementKeyPrefix;
+
+  @override
+  Widget build(BuildContext context) {
+    final PasswordRequirements requirements =
+        TeacherRegistrationValidators.passwordRequirements(password);
+    final bool hasInput = password.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AuthPalette.paleBlue.withValues(alpha: 0.62),
+        borderRadius: AppRadius.mediumAll,
+        border: Border.all(color: const Color(0xFFD8E7F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Password must contain:',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: AuthPalette.ink,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 14,
+            runSpacing: 5,
+            children: <Widget>[
+              _AuthPasswordRequirement(
+                key: Key('${requirementKeyPrefix}_length'),
+                label:
+                    'At least ${TeacherRegistrationValidators.passwordMinLength} characters',
+                isMet: requirements.hasMinimumLength,
+                hasInput: hasInput,
+              ),
+              _AuthPasswordRequirement(
+                key: Key('${requirementKeyPrefix}_uppercase'),
+                label: 'One uppercase letter',
+                isMet: requirements.hasUppercase,
+                hasInput: hasInput,
+              ),
+              _AuthPasswordRequirement(
+                key: Key('${requirementKeyPrefix}_lowercase'),
+                label: 'One lowercase letter',
+                isMet: requirements.hasLowercase,
+                hasInput: hasInput,
+              ),
+              _AuthPasswordRequirement(
+                key: Key('${requirementKeyPrefix}_number'),
+                label: 'One number',
+                isMet: requirements.hasNumber,
+                hasInput: hasInput,
+              ),
+              _AuthPasswordRequirement(
+                key: Key('${requirementKeyPrefix}_special'),
+                label: 'One special character',
+                isMet: requirements.hasSpecialCharacter,
+                hasInput: hasInput,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AuthPasswordRequirement extends StatelessWidget {
+  const _AuthPasswordRequirement({
+    super.key,
+    required this.label,
+    required this.isMet,
+    required this.hasInput,
+  });
+
+  final String label;
+  final bool isMet;
+  final bool hasInput;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color =
+        isMet
+            ? const Color(0xFF217A50)
+            : hasInput
+            ? Theme.of(context).colorScheme.error
+            : const Color(0xFF6B7F8E);
+    final IconData icon =
+        isMet
+            ? Icons.check_circle_rounded
+            : hasInput
+            ? Icons.cancel_rounded
+            : Icons.circle_outlined;
+
+    return Semantics(
+      label: '$label, ${isMet ? 'complete' : 'incomplete'}',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: color,
+              fontWeight: isMet ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

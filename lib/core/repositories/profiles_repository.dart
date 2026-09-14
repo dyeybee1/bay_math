@@ -21,11 +21,12 @@ class ProfilesRepository {
   /// explicitly rather than throwing).
   Future<Profile?> fetchOwnProfile(String userId) async {
     try {
-      final Map<String, dynamic>? data = await _client
-          .from('profiles')
-          .select()
-          .eq('id', userId)
-          .maybeSingle();
+      final Map<String, dynamic>? data =
+          await _client
+              .from('profiles')
+              .select()
+              .eq('id', userId)
+              .maybeSingle();
 
       if (data == null) return null;
       return Profile.fromJson(data);
@@ -41,14 +42,58 @@ class ProfilesRepository {
   /// users' rows to Admin or to the row's own owner.
   Future<List<Profile>> fetchTeachers({ProfileStatus? status}) async {
     try {
-      final PostgrestFilterBuilder<List<Map<String, dynamic>>> query =
-          _client.from('profiles').select().eq('role', 'teacher');
+      final PostgrestFilterBuilder<List<Map<String, dynamic>>> query = _client
+          .from('profiles')
+          .select()
+          .eq('role', 'teacher');
 
       final PostgrestFilterBuilder<List<Map<String, dynamic>>> filtered =
           status == null ? query : query.eq('status', status.name);
 
-      final List<Map<String, dynamic>> data =
-          await filtered.order('created_at', ascending: false);
+      final List<Map<String, dynamic>> data = await filtered.order(
+        'created_at',
+        ascending: status == ProfileStatus.pending,
+      );
+      return data.map(Profile.fromJson).toList();
+    } catch (error) {
+      throw mapExceptionToFailure(error);
+    }
+  }
+
+  /// Approved and rejected Teacher registrations, most recently processed
+  /// first. `updated_at` is maintained by the existing database trigger and
+  /// is the only timestamp that covers both outcomes (`approved_at` exists
+  /// only for approvals).
+  Future<List<Profile>> fetchProcessedTeachers() async {
+    try {
+      final List<Map<String, dynamic>> data = await _client
+          .from('profiles')
+          .select(
+            '*, approved_by_profile:profiles!profiles_approved_by_fkey(full_name)',
+          )
+          .eq('role', 'teacher')
+          .inFilter('status', <String>[
+            ProfileStatus.approved.name,
+            ProfileStatus.rejected.name,
+          ])
+          .order('updated_at', ascending: false);
+      return data.map(Profile.fromJson).toList();
+    } catch (error) {
+      throw mapExceptionToFailure(error);
+    }
+  }
+
+  /// Every non-archived Teacher account. Account Management treats pending,
+  /// approved, rejected, and suspended accounts as its active-directory side;
+  /// only the archive status is excluded by this server-side query.
+  Future<List<Profile>> fetchNonArchivedTeachers() async {
+    try {
+      final List<Map<String, dynamic>> data = await _client
+          .from('profiles')
+          .select()
+          .eq('role', 'teacher')
+          .neq('status', ProfileStatus.archived.name)
+          .order('full_name');
       return data.map(Profile.fromJson).toList();
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -62,8 +107,10 @@ class ProfilesRepository {
   Future<List<Profile>> fetchByIds(List<String> ids) async {
     if (ids.isEmpty) return const [];
     try {
-      final List<Map<String, dynamic>> data =
-          await _client.from('profiles').select().inFilter('id', ids);
+      final List<Map<String, dynamic>> data = await _client
+          .from('profiles')
+          .select()
+          .inFilter('id', ids);
       return data.map(Profile.fromJson).toList();
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -74,13 +121,19 @@ class ProfilesRepository {
   /// rather than left to a default, so the record is explicit about who
   /// approved it and when — the same status change the audit trail (via
   /// `audit_profile_status_change`, 0014) separately, automatically logs.
-  Future<void> approveTeacher({required String teacherId, required String approvedByAdminId}) async {
+  Future<void> approveTeacher({
+    required String teacherId,
+    required String approvedByAdminId,
+  }) async {
     try {
-      await _client.from('profiles').update({
-        'status': 'approved',
-        'approved_by': approvedByAdminId,
-        'approved_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', teacherId);
+      await _client
+          .from('profiles')
+          .update({
+            'status': 'approved',
+            'approved_by': approvedByAdminId,
+            'approved_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', teacherId);
     } catch (error) {
       throw mapExceptionToFailure(error);
     }
@@ -88,7 +141,10 @@ class ProfilesRepository {
 
   Future<void> rejectTeacher(String teacherId) async {
     try {
-      await _client.from('profiles').update({'status': 'rejected'}).eq('id', teacherId);
+      await _client
+          .from('profiles')
+          .update({'status': 'rejected'})
+          .eq('id', teacherId);
     } catch (error) {
       throw mapExceptionToFailure(error);
     }
@@ -96,7 +152,10 @@ class ProfilesRepository {
 
   Future<void> archiveTeacher(String teacherId) async {
     try {
-      await _client.from('profiles').update({'status': 'archived'}).eq('id', teacherId);
+      await _client
+          .from('profiles')
+          .update({'status': 'archived'})
+          .eq('id', teacherId);
     } catch (error) {
       throw mapExceptionToFailure(error);
     }
@@ -107,7 +166,23 @@ class ProfilesRepository {
   /// normal access rather than re-queuing them behind the approval flow.
   Future<void> restoreTeacher(String teacherId) async {
     try {
-      await _client.from('profiles').update({'status': 'approved'}).eq('id', teacherId);
+      await _client
+          .from('profiles')
+          .update({'status': 'approved'})
+          .eq('id', teacherId);
+    } catch (error) {
+      throw mapExceptionToFailure(error);
+    }
+  }
+
+  /// Deletes an archived Teacher through a trusted Edge Function. The
+  /// service-role credential and Auth Admin API never enter Flutter.
+  Future<void> deleteTeacherPermanently(String teacherId) async {
+    try {
+      await _client.functions.invoke(
+        'delete-teacher-account',
+        body: <String, dynamic>{'teacher_id': teacherId},
+      );
     } catch (error) {
       throw mapExceptionToFailure(error);
     }

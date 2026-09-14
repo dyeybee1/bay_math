@@ -14,6 +14,14 @@ class SupabaseConfig {
     await Supabase.initialize(
       url: EnvConfig.supabaseUrl,
       publishableKey: EnvConfig.supabaseAnonKey,
+      authOptions: const FlutterAuthClientOptions(
+        // The password-reset request starts in a portable Windows process but
+        // completes in a separate browser storage context. PKCE's verifier is
+        // intentionally device-local, so it cannot cross that boundary. The
+        // supported implicit recovery flow places short-lived credentials in
+        // the URL fragment, which Supabase Flutter consumes and clears.
+        authFlowType: AuthFlowType.implicit,
+      ),
     );
   }
 }

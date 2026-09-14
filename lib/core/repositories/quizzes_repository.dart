@@ -1,12 +1,16 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../errors/app_failure.dart';
 import '../errors/failure_mapper.dart';
 import '../models/quiz.dart';
 
 /// Reads/writes `quizzes` rows and their `quiz_sections`
 /// visibility-assignment rows. Mirrors `LessonsRepository` — Teacher
-/// visibility/write scope is entirely RLS-enforced
-/// (`quizzes_teacher_select`/`_insert`/`_update`/`_delete`, 0015).
+/// visibility/write scope is RLS-enforced
+/// (`quizzes_teacher_select`/`_insert`/`_update`/`_delete`, 0015). Quiz
+/// deletion additionally uses the ownership-checking
+/// `delete_own_teacher_quiz` RPC (0093/0094), which owns the atomic dependent
+/// cleanup.
 class QuizzesRepository {
   const QuizzesRepository(this._client);
 
@@ -16,8 +20,10 @@ class QuizzesRepository {
   /// Teacher's own.
   Future<List<Quiz>> fetchVisibleToTeacher() async {
     try {
-      final List<Map<String, dynamic>> data =
-          await _client.from('quizzes').select().order('title', ascending: true);
+      final List<Map<String, dynamic>> data = await _client
+          .from('quizzes')
+          .select()
+          .order('title', ascending: true);
       return data.map(Quiz.fromJson).toList();
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -58,21 +64,25 @@ class QuizzesRepository {
     bool shuffleChoices = true,
   }) async {
     try {
-      final Map<String, dynamic> row = await _client
-          .from('quizzes')
-          .insert({
-            'title': title,
-            'quiz_type': quizType.toDb(),
-            'source_type': 'teacher',
-            'created_by': createdBy,
-            'external_url': quizType == QuizType.externalActivity ? externalUrl : null,
-            'external_platform_hint':
-                quizType == QuizType.externalActivity ? externalPlatformHint?.toDb() : null,
-            'shuffle_questions': shuffleQuestions,
-            'shuffle_choices': shuffleChoices,
-          })
-          .select('id')
-          .single();
+      final Map<String, dynamic> row =
+          await _client
+              .from('quizzes')
+              .insert({
+                'title': title,
+                'quiz_type': quizType.toDb(),
+                'source_type': 'teacher',
+                'created_by': createdBy,
+                'external_url':
+                    quizType == QuizType.externalActivity ? externalUrl : null,
+                'external_platform_hint':
+                    quizType == QuizType.externalActivity
+                        ? externalPlatformHint?.toDb()
+                        : null,
+                'shuffle_questions': shuffleQuestions,
+                'shuffle_choices': shuffleChoices,
+              })
+              .select('id')
+              .single();
       return row['id'] as String;
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -92,13 +102,16 @@ class QuizzesRepository {
     required bool shuffleChoices,
   }) async {
     try {
-      await _client.from('quizzes').update({
-        'title': title,
-        'external_url': externalUrl,
-        'external_platform_hint': externalPlatformHint?.toDb(),
-        'shuffle_questions': shuffleQuestions,
-        'shuffle_choices': shuffleChoices,
-      }).eq('id', quizId);
+      await _client
+          .from('quizzes')
+          .update({
+            'title': title,
+            'external_url': externalUrl,
+            'external_platform_hint': externalPlatformHint?.toDb(),
+            'shuffle_questions': shuffleQuestions,
+            'shuffle_choices': shuffleChoices,
+          })
+          .eq('id', quizId);
     } catch (error) {
       throw mapExceptionToFailure(error);
     }
@@ -106,16 +119,38 @@ class QuizzesRepository {
 
   Future<void> delete(String quizId) async {
     try {
-      await _client.from('quizzes').delete().eq('id', quizId);
+      final Object? result = await _client.rpc(
+        'delete_own_teacher_quiz',
+        params: <String, dynamic>{'p_quiz_id': quizId},
+      );
+
+      switch (result) {
+        case 'deleted':
+          return;
+        case 'not_authorized':
+          throw const NotAuthorizedFailure();
+        case 'not_found':
+          throw const NotFoundFailure();
+        default:
+          throw const ServerFailure();
+      }
     } catch (error) {
-      throw mapExceptionToFailure(error);
+      final AppFailure failure = mapExceptionToFailure(error);
+      if (failure is ServerFailure) {
+        throw const ServerFailure(
+          'Could not delete the quiz. Please try again.',
+        );
+      }
+      throw failure;
     }
   }
 
   Future<List<String>> fetchSectionIds(String quizId) async {
     try {
-      final List<Map<String, dynamic>> data =
-          await _client.from('quiz_sections').select('section_id').eq('quiz_id', quizId);
+      final List<Map<String, dynamic>> data = await _client
+          .from('quiz_sections')
+          .select('section_id')
+          .eq('quiz_id', quizId);
       return data.map((row) => row['section_id'] as String).toList();
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -132,8 +167,10 @@ class QuizzesRepository {
   /// a plain `gradeLevel` filter, not instead of it.
   Future<List<String>> fetchQuizIdsForSection(String sectionId) async {
     try {
-      final List<Map<String, dynamic>> data =
-          await _client.from('quiz_sections').select('quiz_id').eq('section_id', sectionId);
+      final List<Map<String, dynamic>> data = await _client
+          .from('quiz_sections')
+          .select('quiz_id')
+          .eq('section_id', sectionId);
       return data.map((row) => row['quiz_id'] as String).toList();
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -156,7 +193,10 @@ class QuizzesRepository {
     }
   }
 
-  Future<void> unassign({required String quizId, required String sectionId}) async {
+  Future<void> unassign({
+    required String quizId,
+    required String sectionId,
+  }) async {
     try {
       await _client
           .from('quiz_sections')

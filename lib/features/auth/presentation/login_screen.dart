@@ -162,6 +162,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       onTogglePassword: () {
         setState(() => _obscurePassword = !_obscurePassword);
       },
+      onForgotPassword: () => context.push(AppRoutes.forgotPassword),
       onRegister: () => context.push(AppRoutes.register),
     );
 
@@ -199,6 +200,7 @@ class _AccessPanel extends StatelessWidget {
     required this.compactHeight,
     required this.onSubmit,
     required this.onTogglePassword,
+    required this.onForgotPassword,
     required this.onRegister,
   });
 
@@ -213,6 +215,7 @@ class _AccessPanel extends StatelessWidget {
   final bool compactHeight;
   final VoidCallback onSubmit;
   final VoidCallback onTogglePassword;
+  final VoidCallback onForgotPassword;
   final VoidCallback onRegister;
 
   @override
@@ -341,38 +344,28 @@ class _AccessPanel extends StatelessWidget {
                   decoration: const BoxDecoration(
                     border: Border(top: BorderSide(color: Color(0xFFE3E9EE))),
                   ),
-                  child: Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: AppSpacing.xs,
-                    runSpacing: AppSpacing.xs,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(
-                        'New teacher?',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                      _AccountActionRow(
+                        prompt: 'Forgot password?',
+                        actionLabel: 'Reset your password',
+                        buttonKey: const Key('login_forgot_password_button'),
+                        focusOrder: 4,
+                        enabled: !disabled,
+                        onPressed: onForgotPassword,
                       ),
-                      FocusTraversalOrder(
-                        order: const NumericFocusOrder(4),
-                        child: TextButton(
-                          key: const Key('login_registration_button'),
-                          onPressed: disabled ? null : onRegister,
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(0, 40),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.sm,
-                            ),
-                            foregroundColor: AuthPalette.primary,
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Text('Create a teacher account'),
-                              SizedBox(width: AppSpacing.xs),
-                              Icon(Icons.north_east_rounded, size: 16),
-                            ],
-                          ),
-                        ),
+                      SizedBox(
+                        height: compactHeight ? AppSpacing.xs : AppSpacing.sm,
+                      ),
+                      _AccountActionRow(
+                        prompt: 'New teacher?',
+                        actionLabel: 'Create a teacher account',
+                        buttonKey: const Key('login_registration_button'),
+                        focusOrder: 5,
+                        enabled: !disabled,
+                        onPressed: onRegister,
+                        actionIcon: Icons.north_east_rounded,
                       ),
                     ],
                   ),
@@ -401,6 +394,68 @@ class _AccessPanel extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _AccountActionRow extends StatelessWidget {
+  const _AccountActionRow({
+    required this.prompt,
+    required this.actionLabel,
+    required this.buttonKey,
+    required this.focusOrder,
+    required this.enabled,
+    required this.onPressed,
+    this.actionIcon,
+  });
+
+  final String prompt;
+  final String actionLabel;
+  final Key buttonKey;
+  final double focusOrder;
+  final bool enabled;
+  final VoidCallback onPressed;
+  final IconData? actionIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final IconData? icon = actionIcon;
+
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xs,
+      children: <Widget>[
+        Text(
+          prompt,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+        ),
+        FocusTraversalOrder(
+          order: NumericFocusOrder(focusOrder),
+          child: TextButton(
+            key: buttonKey,
+            onPressed: enabled ? onPressed : null,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 40),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+              foregroundColor: AuthPalette.primary,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(actionLabel),
+                if (icon != null) ...<Widget>[
+                  const SizedBox(width: AppSpacing.xs),
+                  Icon(icon, size: 16),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

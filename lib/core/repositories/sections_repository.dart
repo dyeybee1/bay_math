@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../errors/app_failure.dart';
 import '../errors/failure_mapper.dart';
 import '../models/section.dart';
 
@@ -14,12 +15,18 @@ class SectionsRepository {
   /// All sections within one school year, ordered by grade level then
   /// name — the natural browsing order for an Admin managing a year's
   /// sections.
-  Future<List<Section>> fetchForSchoolYear(String schoolYearId) async {
+  Future<List<Section>> fetchForSchoolYear(
+    String schoolYearId, {
+    SectionStatus? status,
+  }) async {
     try {
-      final List<Map<String, dynamic>> data = await _client
+      final PostgrestFilterBuilder<List<Map<String, dynamic>>> query = _client
           .from('sections')
           .select()
-          .eq('school_year_id', schoolYearId)
+          .eq('school_year_id', schoolYearId);
+      final PostgrestFilterBuilder<List<Map<String, dynamic>>> filtered =
+          status == null ? query : query.eq('status', status.name);
+      final List<Map<String, dynamic>> data = await filtered
           .order('grade_level')
           .order('name');
       return data.map(Section.fromJson).toList();
@@ -36,8 +43,10 @@ class SectionsRepository {
   Future<List<Section>> fetchByIds(List<String> ids) async {
     if (ids.isEmpty) return const [];
     try {
-      final List<Map<String, dynamic>> data =
-          await _client.from('sections').select().inFilter('id', ids);
+      final List<Map<String, dynamic>> data = await _client
+          .from('sections')
+          .select()
+          .inFilter('id', ids);
       return data.map(Section.fromJson).toList();
     } catch (error) {
       throw mapExceptionToFailure(error);
@@ -66,7 +75,10 @@ class SectionsRepository {
   /// prefer-RESTRICT/soft-status approach).
   Future<void> archive(String sectionId) async {
     try {
-      await _client.from('sections').update({'status': 'archived'}).eq('id', sectionId);
+      await _client
+          .from('sections')
+          .update({'status': 'archived'})
+          .eq('id', sectionId);
     } catch (error) {
       throw mapExceptionToFailure(error);
     }
@@ -74,7 +86,45 @@ class SectionsRepository {
 
   Future<void> restore(String sectionId) async {
     try {
-      await _client.from('sections').update({'status': 'active'}).eq('id', sectionId);
+      await _client
+          .from('sections')
+          .update({'status': 'active'})
+          .eq('id', sectionId);
+    } catch (error) {
+      throw mapExceptionToFailure(error);
+    }
+  }
+
+  /// Permanently deletes an archived section only when the backend confirms
+  /// that no enrollment or quiz-attempt history depends on it.
+  Future<void> deletePermanently(String sectionId) async {
+    try {
+      final String result = await _client.rpc<String>(
+        'delete_archived_section',
+        params: <String, dynamic>{'p_section_id': sectionId},
+      );
+      switch (result) {
+        case 'deleted':
+          return;
+        case 'not_archived':
+          throw const ValidationFailure(
+            'Only archived sections can be permanently deleted.',
+          );
+        case 'has_student_history':
+          throw const ValidationFailure(
+            'This section cannot be deleted because it has student enrollment history that must be preserved.',
+          );
+        case 'has_quiz_history':
+          throw const ValidationFailure(
+            'This section cannot be deleted because it has quiz result history that must be preserved.',
+          );
+        case 'not_found':
+          throw const NotFoundFailure('This section no longer exists.');
+        case 'not_authorized':
+          throw const NotAuthorizedFailure();
+        default:
+          throw const ServerFailure();
+      }
     } catch (error) {
       throw mapExceptionToFailure(error);
     }

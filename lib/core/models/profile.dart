@@ -14,7 +14,8 @@ enum ProfileStatus {
   suspended,
   archived;
 
-  static ProfileStatus fromDb(String value) => ProfileStatus.values.byName(value);
+  static ProfileStatus fromDb(String value) =>
+      ProfileStatus.values.byName(value);
 }
 
 /// A Teacher or Admin identity — the Dart-side mirror of one `profiles` row.
@@ -28,6 +29,7 @@ class Profile {
     required this.fullName,
     required this.email,
     this.approvedBy,
+    this.approvedByName,
     this.approvedAt,
     required this.createdAt,
     required this.updatedAt,
@@ -39,11 +41,18 @@ class Profile {
   final String fullName;
   final String email;
   final String? approvedBy;
+  final String? approvedByName;
   final DateTime? approvedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
 
   factory Profile.fromJson(Map<String, dynamic> json) {
+    final Object? approvedByProfile = json['approved_by_profile'];
+    final String? approvedByName =
+        approvedByProfile is Map<String, dynamic>
+            ? approvedByProfile['full_name'] as String?
+            : null;
+
     return Profile(
       id: json['id'] as String,
       role: ProfileRole.fromDb(json['role'] as String),
@@ -51,9 +60,11 @@ class Profile {
       fullName: json['full_name'] as String,
       email: json['email'] as String,
       approvedBy: json['approved_by'] as String?,
-      approvedAt: json['approved_at'] == null
-          ? null
-          : DateTime.parse(json['approved_at'] as String),
+      approvedByName: approvedByName,
+      approvedAt:
+          json['approved_at'] == null
+              ? null
+              : DateTime.parse(json['approved_at'] as String),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );

@@ -28,13 +28,12 @@ class StudentSummaryTiles {
   /// trigger-maintained, no client-side computation involved.
   final int bestEndlessStreak;
 
-  /// Grade-scoped count of every lesson visible to this student under
-  /// `lessons_student_select` (0015/0026) — the denominator for "Lessons
-  /// Completed" (rule #4).
+  /// Count of the RLS-filtered lessons returned by the same provider as the
+  /// Student Lessons screen — the denominator for "Lessons Completed".
   final int lessonsTotal;
 
-  /// Subset of [lessonsTotal] with a `completed` `lesson_progress` row for
-  /// this student (rule #4).
+  /// Subset of [lessonsTotal] whose IDs occur in this student's completed
+  /// progress set.
   final int lessonsCompleted;
 
   /// Count of distinct quizzes with a "current" attempt (rule #2) — the
@@ -60,6 +59,21 @@ class StudentSummaryTiles {
       quizzesCompleted: json['quizzes_completed'] as int,
       averageScorePercent: json['average_score_percent'] as num?,
       bestScorePercent: json['best_score_percent'] as num?,
+    );
+  }
+
+  StudentSummaryTiles withLessonCounts({
+    required int total,
+    required int completed,
+  }) {
+    return StudentSummaryTiles(
+      studentId: studentId,
+      bestEndlessStreak: bestEndlessStreak,
+      lessonsTotal: total,
+      lessonsCompleted: completed,
+      quizzesCompleted: quizzesCompleted,
+      averageScorePercent: averageScorePercent,
+      bestScorePercent: bestScorePercent,
     );
   }
 }
@@ -111,7 +125,9 @@ class LessonQuizScore {
       totalQuestions: json['total_questions'] as int?,
       scorePercent: json['score_percent'] as num?,
       submittedAt:
-          json['submitted_at'] == null ? null : DateTime.parse(json['submitted_at'] as String),
+          json['submitted_at'] == null
+              ? null
+              : DateTime.parse(json['submitted_at'] as String),
     );
   }
 }

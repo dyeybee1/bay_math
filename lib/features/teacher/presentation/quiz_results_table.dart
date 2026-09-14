@@ -260,16 +260,41 @@ class _QRHeader extends ConsumerStatefulWidget {
 }
 
 class _QRHeaderState extends ConsumerState<_QRHeader> {
+  String? _defaultSectionId(List<MySection> sections) {
+    for (final MySection section in sections) {
+      if (section.section != null) return section.section!.id;
+    }
+    return null;
+  }
+
+  int _activeFilterCount(
+    TeacherQuizResultsSelection selection,
+    List<MySection> sections,
+  ) {
+    int count = 0;
+    if (selection.sectionId != _defaultSectionId(sections)) count += 1;
+    if (selection.assessmentType != QuizResultsAssessmentFilter.regular) {
+      count += 1;
+    }
+    return count;
+  }
+
   @override
   Widget build(BuildContext context) {
     final TextTheme tt = Theme.of(context).textTheme;
     final ColorScheme cs = Theme.of(context).colorScheme;
 
-    // Live selection drives both the subtitle and the dropdown initial values.
-    final TeacherQuizResultsSelection sel =
-        ref.watch(teacherQuizResultsSelectionProvider);
+    final TeacherQuizResultsSelection appliedSelection = ref.watch(
+      teacherQuizResultsSelectionProvider,
+    );
     final List<MySection> sections =
         ref.watch(mySectionsProvider).value ?? const <MySection>[];
+    final int activeFilterCount = _activeFilterCount(
+      appliedSelection,
+      sections,
+    );
+    final String filterLabel =
+        activeFilterCount == 0 ? 'Filters' : 'Filters · $activeFilterCount';
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,99 +317,41 @@ class _QRHeaderState extends ConsumerState<_QRHeader> {
         ),
         // ── Filters popup ────────────────────────────────────────────────
         PopupMenuButton<Never>(
+          key: const Key('teacher_quiz_results_filters_button'),
           tooltip: 'Filters',
           offset: const Offset(0, 44),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          itemBuilder: (_) => <PopupMenuEntry<Never>>[
-            PopupMenuItem<Never>(
-              enabled: false,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: SizedBox(
-                width: 280,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    // Section dropdown
-                    Text(
-                      'Section',
-                      style: AppTextStyles.inter(
-                        size: 12,
-                        weight: FontWeight.w600,
-                        color: AppColors.textSoft,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    DropdownButtonFormField<String>(
-                      initialValue: sel.sectionId,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                        isDense: true,
-                      ),
-                      items: <DropdownMenuItem<String>>[
-                        for (final MySection my in sections)
-                          if (my.section != null)
-                            DropdownMenuItem<String>(
-                              value: my.section!.id,
-                              child: Text(
-                                '${my.section!.gradeLevel.label} — ${my.section!.name}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                      ],
-                      onChanged: (String? id) => ref
+          color: cs.surface,
+          surfaceTintColor: Colors.transparent,
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          itemBuilder:
+              (_) => <PopupMenuEntry<Never>>[
+                PopupMenuItem<Never>(
+                  enabled: false,
+                  padding: EdgeInsets.zero,
+                  child: _QRFilterPanel(
+                    initialSelection: appliedSelection,
+                    sections: sections,
+                    onApply: (TeacherQuizResultsSelection selection) {
+                      ref
                           .read(teacherQuizResultsSelectionProvider.notifier)
-                          .update((s) => s.withSectionId(id)),
-                    ),
-                    const SizedBox(height: 14),
-                    // Assessment type dropdown
-                    Text(
-                      'Assessment type',
-                      style: AppTextStyles.inter(
-                        size: 12,
-                        weight: FontWeight.w600,
-                        color: AppColors.textSoft,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    DropdownButtonFormField<QuizResultsAssessmentFilter>(
-                      initialValue: sel.assessmentType,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8)),
-                        isDense: true,
-                      ),
-                      items: <DropdownMenuItem<QuizResultsAssessmentFilter>>[
-                        for (final QuizResultsAssessmentFilter f
-                            in QuizResultsAssessmentFilter.values)
-                          DropdownMenuItem<QuizResultsAssessmentFilter>(
-                            value: f,
-                            child: Text(f.label),
-                          ),
-                      ],
-                      onChanged: (QuizResultsAssessmentFilter? f) => ref
-                          .read(teacherQuizResultsSelectionProvider.notifier)
-                          .update((s) => s.withAssessmentType(f)),
-                    ),
-                  ],
+                          .state = selection;
+                    },
+                  ),
+                ),
+              ],
+          child: IgnorePointer(
+            child: OutlinedButton.icon(
+              onPressed: () {},
+              icon: const Icon(Icons.filter_list_rounded, size: 16),
+              label: Text(filterLabel),
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
               ),
-            ),
-          ],
-          child: OutlinedButton.icon(
-            onPressed: null,
-            icon: const Icon(Icons.filter_list_rounded, size: 16),
-            label: const Text('Filters'),
-            style: OutlinedButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
             ),
           ),
         ),
@@ -401,6 +368,202 @@ class _QRHeaderState extends ConsumerState<_QRHeader> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _QRFilterPanel extends StatefulWidget {
+  const _QRFilterPanel({
+    required this.initialSelection,
+    required this.sections,
+    required this.onApply,
+  });
+
+  final TeacherQuizResultsSelection initialSelection;
+  final List<MySection> sections;
+  final ValueChanged<TeacherQuizResultsSelection> onApply;
+
+  @override
+  State<_QRFilterPanel> createState() => _QRFilterPanelState();
+}
+
+class _QRFilterPanelState extends State<_QRFilterPanel> {
+  late String? _sectionId;
+  late QuizResultsAssessmentFilter? _assessmentType;
+
+  String? get _defaultSectionId {
+    for (final MySection section in widget.sections) {
+      if (section.section != null) return section.section!.id;
+    }
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _sectionId = widget.initialSelection.sectionId;
+    _assessmentType = widget.initialSelection.assessmentType;
+  }
+
+  void _reset() {
+    setState(() {
+      _sectionId = _defaultSectionId;
+      _assessmentType = QuizResultsAssessmentFilter.regular;
+    });
+  }
+
+  void _apply() {
+    final TeacherQuizResultsSelection selection = TeacherQuizResultsSelection(
+      sectionId: _sectionId,
+      assessmentType: _assessmentType,
+    );
+    Navigator.of(context).pop();
+    widget.onApply(selection);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool canApply = _sectionId != null && _assessmentType != null;
+
+    return SizedBox(
+      key: const Key('teacher_quiz_results_filter_popover'),
+      width: 304,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        'Filters',
+                        style: AppTextStyles.inter(
+                          size: 15,
+                          weight: FontWeight.w700,
+                          color: cs.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Apply both selections when ready.',
+                        style: AppTextStyles.inter(
+                          size: 11,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  key: const Key('teacher_quiz_results_filter_reset'),
+                  onPressed: _reset,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  child: const Text('Reset'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Section',
+              style: AppTextStyles.inter(
+                size: 12,
+                weight: FontWeight.w600,
+                color: AppColors.textSoft,
+              ),
+            ),
+            const SizedBox(height: 4),
+            KeyedSubtree(
+              key: const Key('teacher_quiz_results_section_filter'),
+              child: DropdownButtonFormField<String>(
+                key: ValueKey<String?>('section-$_sectionId'),
+                initialValue: _sectionId,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  isDense: true,
+                ),
+                items: <DropdownMenuItem<String>>[
+                  for (final MySection section in widget.sections)
+                    if (section.section != null)
+                      DropdownMenuItem<String>(
+                        value: section.section!.id,
+                        child: Text(
+                          '${section.section!.gradeLevel.label} — '
+                          '${section.section!.name}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                ],
+                onChanged: (String? value) {
+                  setState(() => _sectionId = value);
+                },
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Assessment type',
+              style: AppTextStyles.inter(
+                size: 12,
+                weight: FontWeight.w600,
+                color: AppColors.textSoft,
+              ),
+            ),
+            const SizedBox(height: 4),
+            KeyedSubtree(
+              key: const Key('teacher_quiz_results_assessment_filter'),
+              child: DropdownButtonFormField<QuizResultsAssessmentFilter>(
+                key: ValueKey<QuizResultsAssessmentFilter?>(_assessmentType),
+                initialValue: _assessmentType,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  isDense: true,
+                ),
+                items: <DropdownMenuItem<QuizResultsAssessmentFilter>>[
+                  for (final QuizResultsAssessmentFilter filter
+                      in QuizResultsAssessmentFilter.values)
+                    DropdownMenuItem<QuizResultsAssessmentFilter>(
+                      value: filter,
+                      child: Text(filter.label),
+                    ),
+                ],
+                onChanged: (QuizResultsAssessmentFilter? value) {
+                  setState(() => _assessmentType = value);
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            Divider(height: 1, color: cs.outlineVariant),
+            const SizedBox(height: 12),
+            FilledButton(
+              key: const Key('teacher_quiz_results_filter_apply'),
+              onPressed: canApply ? _apply : null,
+              child: const Text('Apply filters'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

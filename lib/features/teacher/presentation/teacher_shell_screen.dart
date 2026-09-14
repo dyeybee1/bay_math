@@ -26,33 +26,41 @@ import 'teacher_dashboard_screen.dart';
 // Sidebar now uses AppColors tokens directly.
 // ─────────────────────────────────────────────────────────────────────────────
 abstract final class _C {
-  static const Color primaryBlue  = Color(0xFF2E6FF2);
-  static const Color blue700      = Color(0xFF1E4FD8);
-  static const Color deepBlue     = Color(0xFF0F2A5C);
-  static const Color lightBlueBg  = Color(0xFFE8F1FF);
-  static const Color pageBg       = Color(0xFFF5F9FF);
-  static const Color goldLight    = Color(0xFFFFC94D);
-  static const Color mutedText    = Color(0xFF6B7A99);
-  static const Color border       = Color(0xFFE4EAF7);
-  static const Color white        = Colors.white;
+  static const Color primaryBlue = Color(0xFF2E6FF2);
+  static const Color blue700 = Color(0xFF1E4FD8);
+  static const Color deepBlue = Color(0xFF0F2A5C);
+  static const Color lightBlueBg = Color(0xFFE8F1FF);
+  static const Color pageBg = Color(0xFFF5F9FF);
+  static const Color goldLight = Color(0xFFFFC94D);
+  static const Color mutedText = Color(0xFF6B7A99);
+  static const Color border = Color(0xFFE4EAF7);
+  static const Color white = Colors.white;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Typography helpers
 // ─────────────────────────────────────────────────────────────────────────────
-TextStyle _fredoka(double size, {FontWeight weight = FontWeight.w600, Color color = _C.deepBlue}) =>
-    GoogleFonts.fredoka(fontSize: size, fontWeight: weight, color: color);
+TextStyle _fredoka(
+  double size, {
+  FontWeight weight = FontWeight.w600,
+  Color color = _C.deepBlue,
+}) => GoogleFonts.fredoka(fontSize: size, fontWeight: weight, color: color);
 
-TextStyle _inter(double size, {FontWeight weight = FontWeight.w400, Color color = _C.deepBlue}) =>
-    GoogleFonts.inter(fontSize: size, fontWeight: weight, color: color);
+TextStyle _inter(
+  double size, {
+  FontWeight weight = FontWeight.w400,
+  Color color = _C.deepBlue,
+}) => GoogleFonts.inter(fontSize: size, fontWeight: weight, color: color);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Misc helpers
 // ─────────────────────────────────────────────────────────────────────────────
 String _initials(String name) {
-  final List<String> p = name.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+  final List<String> p =
+      name.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
   if (p.isEmpty) return '?';
-  if (p.length == 1) return p[0].substring(0, math.min(2, p[0].length)).toUpperCase();
+  if (p.length == 1)
+    return p[0].substring(0, math.min(2, p[0].length)).toUpperCase();
   return '${p[0][0]}${p[1][0]}'.toUpperCase();
 }
 
@@ -77,21 +85,27 @@ class MySection {
 /// The signed-in Teacher's own section assignments, primary first.
 final FutureProvider<List<MySection>> mySectionsProvider =
     FutureProvider<List<MySection>>((ref) async {
-  final SessionState session = ref.watch(sessionProvider).value ?? const SessionNone();
-  if (session is! SessionTeacher) return const [];
+      final SessionState session =
+          ref.watch(sessionProvider).value ?? const SessionNone();
+      if (session is! SessionTeacher) return const [];
 
-  final List<TeacherSection> assignments = await ref
-      .watch(teacherSectionsRepositoryProvider)
-      .fetchForTeacher(session.profile.id);
-  if (assignments.isEmpty) return const [];
+      final List<TeacherSection> assignments = await ref
+          .watch(teacherSectionsRepositoryProvider)
+          .fetchForTeacher(session.profile.id);
+      if (assignments.isEmpty) return const [];
 
-  final List<Section> sections = await ref
-      .watch(sectionsRepositoryProvider)
-      .fetchByIds(assignments.map((a) => a.sectionId).toList());
-  final Map<String, Section> sectionsById = {for (final Section s in sections) s.id: s};
+      final List<Section> sections = await ref
+          .watch(sectionsRepositoryProvider)
+          .fetchByIds(assignments.map((a) => a.sectionId).toList());
+      final Map<String, Section> sectionsById = {
+        for (final Section s in sections) s.id: s,
+      };
 
-  return [for (final TeacherSection a in assignments) MySection(a, sectionsById[a.sectionId])];
-});
+      return [
+        for (final TeacherSection a in assignments)
+          MySection(a, sectionsById[a.sectionId]),
+      ];
+    });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Nav destination descriptor
@@ -103,13 +117,13 @@ class _Dest {
 }
 
 const List<_Dest> _kDestinations = <_Dest>[
-  _Dest(icon: Icons.groups_2_outlined,    label: 'My Sections'),
-  _Dest(icon: Icons.menu_book_outlined,   label: 'Lessons'),
+  _Dest(icon: Icons.groups_2_outlined, label: 'My Sections'),
+  _Dest(icon: Icons.menu_book_outlined, label: 'Lessons'),
   _Dest(icon: Icons.help_outline_rounded, label: 'Question Bank'),
-  _Dest(icon: Icons.assignment_outlined,  label: 'Quizzes'),
-  _Dest(icon: Icons.bar_chart_rounded,    label: 'Quiz Results'),
-  _Dest(icon: Icons.dashboard_outlined,   label: 'Dashboard'),
-  _Dest(icon: Icons.summarize_outlined,   label: 'Progress Reports'),
+  _Dest(icon: Icons.assignment_outlined, label: 'Quizzes'),
+  _Dest(icon: Icons.bar_chart_rounded, label: 'Quiz Results'),
+  _Dest(icon: Icons.dashboard_outlined, label: 'Statistics'),
+  _Dest(icon: Icons.summarize_outlined, label: 'Progress Reports'),
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -126,14 +140,16 @@ class _TeacherShellScreenState extends ConsumerState<TeacherShellScreen> {
   int _selectedIndex = 0;
 
   static const double _sidebarWidth = 248;
-  static const double _mobileBreak  = 700;
+  static const double _mobileBreak = 700;
 
   void _onNavTap(int index) => setState(() => _selectedIndex = index);
 
   @override
   Widget build(BuildContext context) {
-    final SessionState session = ref.watch(sessionProvider).value ?? const SessionNone();
-    final String fullName = session is SessionTeacher ? session.profile.fullName : 'Teacher';
+    final SessionState session =
+        ref.watch(sessionProvider).value ?? const SessionNone();
+    final String fullName =
+        session is SessionTeacher ? session.profile.fullName : 'Teacher';
     final double width = MediaQuery.of(context).size.width;
     final bool isWide = width >= _mobileBreak;
 
@@ -146,7 +162,10 @@ class _TeacherShellScreenState extends ConsumerState<TeacherShellScreen> {
           width: _sidebarWidth,
           child: _Sidebar(
             selected: _selectedIndex,
-            onTap: (i) { Navigator.of(context).pop(); _onNavTap(i); },
+            onTap: (i) {
+              Navigator.of(context).pop();
+              _onNavTap(i);
+            },
             onSignOut: () => ref.read(sessionProvider.notifier).signOut(),
           ),
         ),
@@ -277,7 +296,10 @@ class _Sidebar extends StatelessWidget {
               // ── Nav items ────────────────────────────────────────────
               for (int i = 0; i < _kDestinations.length; i++)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 1,
+                  ),
                   child: _NavItem(
                     dest: _kDestinations[i],
                     isSelected: selected == i,
@@ -299,10 +321,17 @@ class _Sidebar extends StatelessWidget {
               child: TextButton.icon(
                 onPressed: onSignOut,
                 style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 14,
+                  ),
                   alignment: Alignment.centerLeft,
                 ),
-                icon: const Icon(Icons.logout_rounded, color: Color(0xFFB91C1C), size: 18),
+                icon: const Icon(
+                  Icons.logout_rounded,
+                  color: Color(0xFFB91C1C),
+                  size: 18,
+                ),
                 label: Text(
                   'Sign out',
                   style: AppTextStyles.inter(
@@ -320,9 +349,12 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
-
 class _NavItem extends StatefulWidget {
-  const _NavItem({required this.dest, required this.isSelected, required this.onTap});
+  const _NavItem({
+    required this.dest,
+    required this.isSelected,
+    required this.onTap,
+  });
   final _Dest dest;
   final bool isSelected;
   final VoidCallback onTap;
@@ -338,9 +370,10 @@ class _NavItemState extends State<_NavItem> {
   Widget build(BuildContext context) {
     final bool active = widget.isSelected;
 
-    final Color bgColor = active
-        ? AppColors.accent
-        : (_hovered ? const Color(0xFFF3F5FB) : Colors.transparent);
+    final Color bgColor =
+        active
+            ? AppColors.accent
+            : (_hovered ? const Color(0xFFF3F5FB) : Colors.transparent);
     final Color iconColor = active ? Colors.white : AppColors.textSoft;
     final Color textColor = active ? Colors.white : AppColors.navy;
 
@@ -386,7 +419,9 @@ class _MySectionsView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<MySection>> mySections = ref.watch(mySectionsProvider);
+    final AsyncValue<List<MySection>> mySections = ref.watch(
+      mySectionsProvider,
+    );
 
     return Container(
       decoration: const BoxDecoration(
@@ -411,10 +446,17 @@ class _MySectionsView extends ConsumerWidget {
                     children: <Widget>[
                       Text(
                         fullName,
-                        style: _inter(13, weight: FontWeight.w600, color: _C.primaryBlue),
+                        style: _inter(
+                          13,
+                          weight: FontWeight.w600,
+                          color: _C.primaryBlue,
+                        ),
                       ),
                       const SizedBox(height: 2),
-                      Text('My Sections', style: _fredoka(34, weight: FontWeight.w700)),
+                      Text(
+                        'My Sections',
+                        style: _fredoka(34, weight: FontWeight.w700),
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         'Pick a section to manage its students.',
@@ -425,20 +467,28 @@ class _MySectionsView extends ConsumerWidget {
                 ),
                 // Teacher avatar chip
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: _C.white,
                     borderRadius: BorderRadius.circular(40),
                     border: Border.all(color: _C.border),
                     boxShadow: const <BoxShadow>[
-                      BoxShadow(color: Color(0x142E6FF2), blurRadius: 12, offset: Offset(0, 4)),
+                      BoxShadow(
+                        color: Color(0x142E6FF2),
+                        blurRadius: 12,
+                        offset: Offset(0, 4),
+                      ),
                     ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
                       Container(
-                        width: 38, height: 38,
+                        width: 38,
+                        height: 38,
                         alignment: Alignment.center,
                         decoration: const BoxDecoration(
                           shape: BoxShape.circle,
@@ -450,7 +500,11 @@ class _MySectionsView extends ConsumerWidget {
                         ),
                         child: Text(
                           _initials(fullName),
-                          style: _inter(14, weight: FontWeight.w700, color: _C.white),
+                          style: _inter(
+                            14,
+                            weight: FontWeight.w700,
+                            color: _C.white,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -458,10 +512,14 @@ class _MySectionsView extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          Text(fullName,
-                              style: _inter(13, weight: FontWeight.w700)),
-                          Text('Elementary · Math',
-                              style: _inter(11, color: _C.mutedText)),
+                          Text(
+                            fullName,
+                            style: _inter(13, weight: FontWeight.w700),
+                          ),
+                          Text(
+                            'Elementary · Math',
+                            style: _inter(11, color: _C.mutedText),
+                          ),
                         ],
                       ),
                     ],
@@ -476,14 +534,17 @@ class _MySectionsView extends ConsumerWidget {
             // ── Section list ─────────────────────────────────────────────
             mySections.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (Object e, _) => AppErrorState(
-                message: e is AppFailure ? e.message : 'Could not load your sections.',
-                onRetry: () => ref.invalidate(mySectionsProvider),
-              ),
-              data: (List<MySection> list) => _SectionListBody(
-                sections: list,
-                context: context,
-              ),
+              error:
+                  (Object e, _) => AppErrorState(
+                    message:
+                        e is AppFailure
+                            ? e.message
+                            : 'Could not load your sections.',
+                    onRetry: () => ref.invalidate(mySectionsProvider),
+                  ),
+              data:
+                  (List<MySection> list) =>
+                      _SectionListBody(sections: list, context: context),
             ),
           ],
         ),
@@ -509,7 +570,11 @@ class _WelcomeBanner extends StatelessWidget {
           end: Alignment.centerRight,
         ),
         boxShadow: const <BoxShadow>[
-          BoxShadow(color: Color(0x402E6FF2), blurRadius: 20, offset: Offset(0, 8)),
+          BoxShadow(
+            color: Color(0x402E6FF2),
+            blurRadius: 20,
+            offset: Offset(0, 8),
+          ),
         ],
       ),
       child: Row(
@@ -525,12 +590,20 @@ class _WelcomeBanner extends StatelessWidget {
                 const SizedBox(height: 6),
                 RichText(
                   text: TextSpan(
-                    style: _fredoka(22, weight: FontWeight.w700, color: _C.white),
+                    style: _fredoka(
+                      22,
+                      weight: FontWeight.w700,
+                      color: _C.white,
+                    ),
                     children: <InlineSpan>[
                       const TextSpan(text: 'Ready for today, '),
                       TextSpan(
                         text: '$firstName?',
-                        style: _fredoka(22, weight: FontWeight.w700, color: _C.goldLight),
+                        style: _fredoka(
+                          22,
+                          weight: FontWeight.w700,
+                          color: _C.goldLight,
+                        ),
                       ),
                     ],
                   ),
@@ -540,7 +613,8 @@ class _WelcomeBanner extends StatelessWidget {
           ),
           Image.asset(
             'assets/images/baymath_logo.png',
-            width: 90, height: 90,
+            width: 90,
+            height: 90,
             fit: BoxFit.contain,
           ),
           const SizedBox(width: 16),
@@ -577,7 +651,8 @@ class _SectionListBody extends StatelessWidget {
           const AppEmptyState(
             icon: Icons.groups_outlined,
             title: 'No sections assigned yet',
-            description: 'Ask an admin to assign you to a section to get started.',
+            description:
+                'Ask an admin to assign you to a section to get started.',
           )
         else
           Wrap(
@@ -587,11 +662,15 @@ class _SectionListBody extends StatelessWidget {
               for (final MySection my in sections)
                 _SectionCard(
                   my: my,
-                  onTap: my.section == null
-                      ? null
-                      : () => Navigator.of(context).push(
+                  onTap:
+                      my.section == null
+                          ? null
+                          : () => Navigator.of(context).push(
                             MaterialPageRoute<void>(
-                              builder: (_) => SectionWorkspaceScreen(section: my.section!),
+                              builder:
+                                  (_) => SectionWorkspaceScreen(
+                                    section: my.section!,
+                                  ),
                             ),
                           ),
                 ),
@@ -624,9 +703,13 @@ class _SectionCardState extends ConsumerState<_SectionCard> {
 
     // Fetch enrolled students for count + avatar stack
     final AsyncValue<List<EnrolledStudent>> studentsAsync =
-        section != null ? ref.watch(enrolledStudentsProvider(section.id)) : const AsyncValue.data([]);
-    final List<EnrolledStudent> students =
-        studentsAsync.maybeWhen(data: (d) => d, orElse: () => []);
+        section != null
+            ? ref.watch(enrolledStudentsProvider(section.id))
+            : const AsyncValue.data([]);
+    final List<EnrolledStudent> students = studentsAsync.maybeWhen(
+      data: (d) => d,
+      orElse: () => [],
+    );
     final int count = students.length;
 
     return MouseRegion(
@@ -643,9 +726,10 @@ class _SectionCardState extends ConsumerState<_SectionCard> {
             border: Border.all(color: _C.border),
             boxShadow: <BoxShadow>[
               BoxShadow(
-                color: _hovered
-                    ? const Color(0x252E6FF2)
-                    : const Color(0x0F2E6FF2),
+                color:
+                    _hovered
+                        ? const Color(0x252E6FF2)
+                        : const Color(0x0F2E6FF2),
                 blurRadius: _hovered ? 24 : 10,
                 offset: const Offset(0, 6),
               ),
@@ -664,27 +748,37 @@ class _SectionCardState extends ConsumerState<_SectionCard> {
                     Row(
                       children: <Widget>[
                         Container(
-                          width: 44, height: 44,
+                          width: 44,
+                          height: 44,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: _C.lightBlueBg,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.groups_2_outlined,
-                              color: _C.primaryBlue, size: 24),
+                          child: const Icon(
+                            Icons.groups_2_outlined,
+                            color: _C.primaryBlue,
+                            size: 24,
+                          ),
                         ),
                         const Spacer(),
                         if (isPrimary)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 5,
+                            ),
                             decoration: BoxDecoration(
                               color: _C.lightBlueBg,
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
                               'PRIMARY',
-                              style: _inter(11,
-                                  weight: FontWeight.w700, color: _C.primaryBlue),
+                              style: _inter(
+                                11,
+                                weight: FontWeight.w700,
+                                color: _C.primaryBlue,
+                              ),
                             ),
                           ),
                       ],
@@ -707,13 +801,13 @@ class _SectionCardState extends ConsumerState<_SectionCard> {
               ),
               // Footer with avatar stack + arrow
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 14,
+                ),
                 decoration: const BoxDecoration(
                   border: Border(
-                    top: BorderSide(
-                      color: _C.border,
-                      style: BorderStyle.solid,
-                    ),
+                    top: BorderSide(color: _C.border, style: BorderStyle.solid),
                   ),
                 ),
                 child: Row(
@@ -722,7 +816,8 @@ class _SectionCardState extends ConsumerState<_SectionCard> {
                     const Spacer(),
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
-                      width: 32, height: 32,
+                      width: 32,
+                      height: 32,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
@@ -752,9 +847,9 @@ class _AvatarStack extends StatelessWidget {
   const _AvatarStack({required this.students});
   final List<EnrolledStudent> students;
 
-  static const double _size   = 30;
+  static const double _size = 30;
   static const double _offset = 18; // horizontal shift per avatar
-  static const int    _maxShow = 3;
+  static const int _maxShow = 3;
 
   static const List<List<Color>> _gradients = <List<Color>>[
     <Color>[Color(0xFFFFC94D), Color(0xFFF5A623)],
@@ -766,7 +861,7 @@ class _AvatarStack extends StatelessWidget {
   Widget build(BuildContext context) {
     if (students.isEmpty) return const SizedBox.shrink();
 
-    final int show  = math.min(_maxShow, students.length);
+    final int show = math.min(_maxShow, students.length);
     final int extra = students.length - show;
     final int total = show + (extra > 0 ? 1 : 0);
 

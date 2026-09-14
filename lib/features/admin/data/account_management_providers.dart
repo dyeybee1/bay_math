@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/profile.dart';
+import '../../../core/models/student.dart';
 import '../../../core/providers/supabase_providers.dart';
 import '../../../core/repositories/students_repository.dart';
 
@@ -70,12 +71,27 @@ import '../../../core/repositories/students_repository.dart';
 /// imports `admin_dashboard_providers.dart` and `teacher_approval_screen.dart`
 /// separately for their own respective providers.
 
+/// The directory still needs both scopes at once for its Active/Archived
+/// counters, but each scope is fetched explicitly in SQL. The widget never
+/// relies on an unfiltered table read to separate archive state.
 final FutureProvider<List<Profile>> adminAccountsTeachersProvider =
-    FutureProvider<List<Profile>>((ref) {
-  return ref.watch(profilesRepositoryProvider).fetchTeachers();
-});
+    FutureProvider<List<Profile>>((ref) async {
+      final repository = ref.watch(profilesRepositoryProvider);
+      final List<List<Profile>> scoped =
+          await Future.wait(<Future<List<Profile>>>[
+            repository.fetchNonArchivedTeachers(),
+            repository.fetchTeachers(status: ProfileStatus.archived),
+          ]);
+      return <Profile>[...scoped[0], ...scoped[1]];
+    });
 
 final FutureProvider<List<StudentWithSection>> adminAccountsStudentsProvider =
-    FutureProvider<List<StudentWithSection>>((ref) {
-  return ref.watch(studentsRepositoryProvider).fetchAllWithSection();
-});
+    FutureProvider<List<StudentWithSection>>((ref) async {
+      final repository = ref.watch(studentsRepositoryProvider);
+      final List<List<StudentWithSection>> scoped =
+          await Future.wait(<Future<List<StudentWithSection>>>[
+            repository.fetchAllWithSection(status: StudentStatus.active),
+            repository.fetchAllWithSection(status: StudentStatus.archived),
+          ]);
+      return <StudentWithSection>[...scoped[0], ...scoped[1]];
+    });

@@ -1,5 +1,24 @@
 import 'worked_example.dart';
 
+/// A validated composer block sent to `save_teacher_lesson`.
+class LessonPageInput {
+  const LessonPageInput({
+    required this.sectionType,
+    required this.title,
+    required this.body,
+  });
+
+  final String sectionType;
+  final String title;
+  final String body;
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'section_type': sectionType,
+    'title': title,
+    'body': body,
+  };
+}
+
 /// A Dart-side mirror of one `public.lesson_pages` row (0028) — one
 /// ordered slide of a lesson's guided Student viewer.
 ///
@@ -39,7 +58,8 @@ class LessonPage {
   final DateTime updatedAt;
 
   factory LessonPage.fromJson(Map<String, dynamic> json) {
-    final Map<String, dynamic>? workedExampleJson = json['worked_example'] as Map<String, dynamic>?;
+    final Map<String, dynamic>? workedExampleJson =
+        json['worked_example'] as Map<String, dynamic>?;
     return LessonPage(
       id: json['id'] as String,
       lessonId: json['lesson_id'] as String,
@@ -47,7 +67,10 @@ class LessonPage {
       sectionType: json['section_type'] as String?,
       title: json['title'] as String,
       body: json['body'] as String,
-      workedExample: workedExampleJson == null ? null : WorkedExample.fromJson(workedExampleJson),
+      workedExample:
+          workedExampleJson == null
+              ? null
+              : WorkedExample.fromJson(workedExampleJson),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );

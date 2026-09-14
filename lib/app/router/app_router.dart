@@ -4,13 +4,16 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models/profile.dart';
 import '../../core/models/student_session.dart';
+import '../../core/providers/password_recovery_provider.dart';
 import '../../core/providers/session_provider.dart';
 import '../../core/providers/student_session_provider.dart';
 import '../../dev/component_gallery/component_gallery_screen.dart';
 import '../../features/admin/presentation/admin_shell_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/pending_approval_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
+import '../../features/auth/presentation/reset_password_screen.dart';
 import '../../features/error/presentation/not_found_screen.dart';
 import '../../features/error/presentation/unauthorized_screen.dart';
 import '../../features/splash/presentation/splash_screen.dart';
@@ -57,6 +60,14 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.register,
         builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.forgotPassword,
+        builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.resetPassword,
+        builder: (context, state) => const ResetPasswordScreen(),
       ),
       GoRoute(
         path: AppRoutes.pendingApproval,
@@ -162,6 +173,21 @@ bool _isStudentRouteFamily(String location) {
 
 String? _redirectStaff(Ref ref, String location) {
   final AsyncValue<SessionState> asyncSession = ref.read(sessionProvider);
+  final PasswordRecoveryStatus recoveryStatus = ref.read(
+    passwordRecoveryProvider,
+  );
+
+  // Recovery UI does not depend on a profile query succeeding. The Supabase
+  // Auth session is sufficient to update the password, while the recovery
+  // guard below prevents that session from entering either workspace.
+  if (recoveryStatus == PasswordRecoveryStatus.valid) {
+    return location == AppRoutes.resetPassword ? null : AppRoutes.resetPassword;
+  }
+  if (location == AppRoutes.resetPassword ||
+      (recoveryStatus == PasswordRecoveryStatus.invalid &&
+          location == AppRoutes.forgotPassword)) {
+    return null;
+  }
 
   return asyncSession.when(
     // Still resolving the restored session (app startup) — stay on splash,
@@ -170,19 +196,50 @@ String? _redirectStaff(Ref ref, String location) {
     // Resolution itself failed (e.g. SessionExpiredFailure via markExpired)
     // — the Unified Session-Expiration Policy's outcome: back to login.
     error: (_, _) => location == AppRoutes.login ? null : AppRoutes.login,
-    data: (session) => redirectForStaffSession(session, location),
+    data:
+        (session) => redirectForStaffSession(
+          session,
+          location,
+          recoveryStatus: recoveryStatus,
+        ),
   );
 }
 
 @visibleForTesting
-String? redirectForStaffSession(SessionState session, String location) {
+String? redirectForStaffSession(
+  SessionState session,
+  String location, {
+  PasswordRecoveryStatus recoveryStatus = PasswordRecoveryStatus.none,
+}) {
   if (_isStudentRouteFamily(location)) {
-    return redirectForStaffSession(session, AppRoutes.splash);
+    return redirectForStaffSession(
+      session,
+      AppRoutes.splash,
+      recoveryStatus: recoveryStatus,
+    );
+  }
+
+  // A recovery token is a narrowly-scoped credential, not a normal workspace
+  // sign-in. Keep every role on the reset page until the password is updated
+  // and this browser session is signed out.
+  if (recoveryStatus == PasswordRecoveryStatus.valid) {
+    return location == AppRoutes.resetPassword ? null : AppRoutes.resetPassword;
+  }
+  if (location == AppRoutes.resetPassword) {
+    // Invalid/manual links must reach the safe error view. A completed flow
+    // also remains visible long enough to show its success instructions.
+    return null;
+  }
+  if (recoveryStatus == PasswordRecoveryStatus.invalid &&
+      location == AppRoutes.forgotPassword) {
+    return null;
   }
 
   final bool atSplash = location == AppRoutes.splash;
   final bool atAuthRoute =
-      location == AppRoutes.login || location == AppRoutes.register;
+      location == AppRoutes.login ||
+      location == AppRoutes.register ||
+      location == AppRoutes.forgotPassword;
 
   switch (session) {
     case SessionNone _:

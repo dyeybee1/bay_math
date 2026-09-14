@@ -13,7 +13,8 @@ import '../../../core/providers/supabase_providers.dart';
 import '../../../core/repositories/students_repository.dart';
 import '../../../core/widgets/widgets.dart';
 import '../data/account_management_providers.dart';
-import 'teacher_approval_screen.dart' show teachersListProvider;
+import 'teacher_approval_screen.dart'
+    show processedTeachersListProvider, teachersListProvider;
 
 /// Account Management (0047) — Part 4: the real screen, replacing the
 /// Part 3 placeholder (`_AccountsPlaceholderScreen`, since removed) in
@@ -325,6 +326,7 @@ class _AccountManagementScreenState
       await ref.read(profilesRepositoryProvider).archiveTeacher(teacher.id);
       ref.invalidate(adminAccountsTeachersProvider);
       ref.invalidate(teachersListProvider);
+      ref.invalidate(processedTeachersListProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${teacher.fullName} archived.')),
@@ -368,9 +370,57 @@ class _AccountManagementScreenState
       await ref.read(profilesRepositoryProvider).restoreTeacher(teacher.id);
       ref.invalidate(adminAccountsTeachersProvider);
       ref.invalidate(teachersListProvider);
+      ref.invalidate(processedTeachersListProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${teacher.fullName} restored.')),
+        );
+      }
+    } on AppFailure catch (failure) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(failure.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _pendingIds.remove(teacher.id));
+    }
+  }
+
+  Future<void> _deleteTeacherPermanently(Profile teacher) async {
+    final bool? confirmed = await AppDialog.show<bool>(
+      context,
+      title: 'Delete this account permanently?',
+      type: AppDialogType.error,
+      message:
+          'All data that is intentionally tied to this account and configured for permanent deletion may also be removed. This action cannot be undone.',
+      actions: <Widget>[
+        AppButton(
+          label: 'Cancel',
+          variant: AppButtonVariant.text,
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        AppButton(
+          label: 'Delete permanently',
+          variant: AppButtonVariant.danger,
+          onPressed: () => Navigator.of(context).pop(true),
+        ),
+      ],
+    );
+    if (confirmed != true) return;
+
+    setState(() => _pendingIds.add(teacher.id));
+    try {
+      await ref
+          .read(profilesRepositoryProvider)
+          .deleteTeacherPermanently(teacher.id);
+      ref.invalidate(adminAccountsTeachersProvider);
+      ref.invalidate(_teacherSectionAssignmentsProvider);
+      ref.invalidate(teachersListProvider);
+      ref.invalidate(processedTeachersListProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Teacher account deleted permanently.')),
         );
       }
     } on AppFailure catch (failure) {
@@ -507,6 +557,50 @@ class _AccountManagementScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${student.fullName} restored.')),
+        );
+      }
+    } on AppFailure catch (failure) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(failure.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _pendingIds.remove(student.id));
+    }
+  }
+
+  Future<void> _deleteStudentPermanently(Student student) async {
+    final bool? confirmed = await AppDialog.show<bool>(
+      context,
+      title: 'Delete this account permanently?',
+      type: AppDialogType.error,
+      message:
+          'All data that is intentionally tied to this account and configured for permanent deletion may also be removed. This action cannot be undone.',
+      actions: <Widget>[
+        AppButton(
+          label: 'Cancel',
+          variant: AppButtonVariant.text,
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        AppButton(
+          label: 'Delete permanently',
+          variant: AppButtonVariant.danger,
+          onPressed: () => Navigator.of(context).pop(true),
+        ),
+      ],
+    );
+    if (confirmed != true) return;
+
+    setState(() => _pendingIds.add(student.id));
+    try {
+      await ref
+          .read(studentsRepositoryProvider)
+          .deleteStudentPermanently(student.id);
+      ref.invalidate(adminAccountsStudentsProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Student account deleted permanently.')),
         );
       }
     } on AppFailure catch (failure) {
@@ -670,7 +764,7 @@ class _AccountManagementScreenState
               : statusIsEmpty
               ? _statusFilter == _StatusFilter.active
                   ? 'No active accounts yet'
-                  : 'No archived accounts yet'
+                  : 'No archived accounts.'
               : 'No accounts match your filters';
       final String emptyDescription =
           directoryIsEmpty
@@ -698,8 +792,10 @@ class _AccountManagementScreenState
       pendingIds: _pendingIds,
       onArchiveTeacher: _archiveTeacher,
       onRestoreTeacher: _restoreTeacher,
+      onDeleteTeacher: _deleteTeacherPermanently,
       onArchiveStudent: _archiveStudent,
       onRestoreStudent: _restoreStudent,
+      onDeleteStudent: _deleteStudentPermanently,
       onEditTeacher: _editTeacher,
       teachers: teachersAsync.value!,
       students: studentsAsync.value!,
@@ -1118,6 +1214,7 @@ class _EditTeacherDialogState extends ConsumerState<_EditTeacherDialog> {
     if (anySucceeded) {
       ref.invalidate(adminAccountsTeachersProvider);
       ref.invalidate(teachersListProvider);
+      ref.invalidate(processedTeachersListProvider);
     }
 
     if (!mounted) return;
@@ -1467,8 +1564,10 @@ class _AccountDirectory extends StatelessWidget {
     required this.pendingIds,
     required this.onArchiveTeacher,
     required this.onRestoreTeacher,
+    required this.onDeleteTeacher,
     required this.onArchiveStudent,
     required this.onRestoreStudent,
+    required this.onDeleteStudent,
     required this.onEditTeacher,
     required this.teachers,
     required this.students,
@@ -1479,8 +1578,10 @@ class _AccountDirectory extends StatelessWidget {
   final Set<String> pendingIds;
   final ValueChanged<Profile> onArchiveTeacher;
   final ValueChanged<Profile> onRestoreTeacher;
+  final ValueChanged<Profile> onDeleteTeacher;
   final ValueChanged<Student> onArchiveStudent;
   final ValueChanged<StudentWithSection> onRestoreStudent;
+  final ValueChanged<Student> onDeleteStudent;
   final ValueChanged<Profile> onEditTeacher;
   final List<Profile> teachers;
   final List<StudentWithSection> students;
@@ -1543,8 +1644,10 @@ class _AccountDirectory extends StatelessWidget {
                   isPending: pendingIds.contains(rows[index].id),
                   onArchiveTeacher: onArchiveTeacher,
                   onRestoreTeacher: onRestoreTeacher,
+                  onDeleteTeacher: onDeleteTeacher,
                   onArchiveStudent: onArchiveStudent,
                   onRestoreStudent: onRestoreStudent,
+                  onDeleteStudent: onDeleteStudent,
                   onEditTeacher: onEditTeacher,
                   teachers: teachers,
                   students: students,
@@ -1619,8 +1722,10 @@ class _AccountRowCard extends StatelessWidget {
     required this.isPending,
     required this.onArchiveTeacher,
     required this.onRestoreTeacher,
+    required this.onDeleteTeacher,
     required this.onArchiveStudent,
     required this.onRestoreStudent,
+    required this.onDeleteStudent,
     required this.onEditTeacher,
     required this.teachers,
     required this.students,
@@ -1631,12 +1736,14 @@ class _AccountRowCard extends StatelessWidget {
   final bool isPending;
   final ValueChanged<Profile> onArchiveTeacher;
   final ValueChanged<Profile> onRestoreTeacher;
+  final ValueChanged<Profile> onDeleteTeacher;
   final ValueChanged<Student> onArchiveStudent;
 
   /// Takes the row's resolved `StudentWithSection` (not just `Student`) so
   /// the confirm dialog can name the exact section the student will be
   /// re-enrolled into without a second repository lookup.
   final ValueChanged<StudentWithSection> onRestoreStudent;
+  final ValueChanged<Student> onDeleteStudent;
 
   /// Teacher-only. Never invoked for a student row (see [_buildEditButton]'s
   /// `row.role == _AccountRole.teacher` guard) — still required rather than
@@ -1816,14 +1923,18 @@ class _AccountRowCard extends StatelessWidget {
   }
 
   Widget _buildActions() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Wrap(
+      alignment: WrapAlignment.end,
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xs,
       children: <Widget>[
-        if (row.role == _AccountRole.teacher) ...<Widget>[
-          _buildEditButton(),
-          const SizedBox(width: AppSpacing.xs),
+        if (row.isArchived) ...<Widget>[
+          _buildRestoreButton(),
+          _buildDeleteButton(),
+        ] else ...<Widget>[
+          if (row.role == _AccountRole.teacher) _buildEditButton(),
+          _buildArchiveButton(),
         ],
-        if (row.isArchived) _buildRestoreButton() else _buildArchiveButton(),
       ],
     );
   }
@@ -1892,6 +2003,17 @@ class _AccountRowCard extends StatelessWidget {
     );
   }
 
+  Widget _buildDeleteButton() {
+    return _AccountActionButton(
+      key: Key('delete_account_${row.id}'),
+      label: 'Delete permanently',
+      icon: Icons.delete_forever_outlined,
+      tone: _AccountActionTone.destructive,
+      isLoading: isPending,
+      onPressed: isPending ? null : _handleDelete,
+    );
+  }
+
   void _handleArchive() {
     if (row.role == _AccountRole.teacher) {
       final Profile teacher = teachers.firstWhere((t) => t.id == row.id);
@@ -1912,6 +2034,17 @@ class _AccountRowCard extends StatelessWidget {
         (s) => s.student.id == row.id,
       );
       onRestoreStudent(studentWithSection);
+    }
+  }
+
+  void _handleDelete() {
+    if (row.role == _AccountRole.teacher) {
+      final Profile teacher = teachers.firstWhere((t) => t.id == row.id);
+      onDeleteTeacher(teacher);
+    } else {
+      final Student student =
+          students.firstWhere((s) => s.student.id == row.id).student;
+      onDeleteStudent(student);
     }
   }
 }
@@ -2001,6 +2134,7 @@ enum _AccountActionTone { normal, destructive }
 
 class _AccountActionButton extends StatelessWidget {
   const _AccountActionButton({
+    super.key,
     required this.label,
     required this.icon,
     required this.onPressed,

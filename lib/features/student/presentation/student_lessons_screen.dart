@@ -2,28 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+export '../data/student_lessons_providers.dart'
+    show studentVisibleLessonsProvider;
+
 import '../../../app/constants/app_dimensions.dart';
 import '../../../app/constants/app_spacing.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/lesson.dart';
-import '../../../core/providers/supabase_providers.dart';
 import '../../../core/widgets/widgets.dart';
+import '../data/student_lessons_providers.dart';
 import 'lesson_viewer_screen.dart';
 import 'student_curriculum_order.dart';
-
-/// Every lesson visible to the signed-in student — RLS
-/// (`lessons_student_select`, 0015) resolves built-in + section-assigned
-/// visibility automatically; this is the same query
-/// `LessonsRepository.fetchVisibleToTeacher()` already runs for a Teacher,
-/// just issued from the student-scoped client instead (see
-/// `studentLessonsRepositoryProvider`'s doc comment for why that reuse is
-/// safe).
-final studentVisibleLessonsProvider = FutureProvider<List<Lesson>>((ref) {
-  final repo = ref.watch(studentLessonsRepositoryProvider);
-  if (repo == null) throw const SessionExpiredFailure();
-  return repo.fetchVisibleToTeacher();
-});
 
 abstract final class _LessonsPalette {
   static const Color pageBackground = Color(0xFFF3F7FC);
@@ -39,13 +29,17 @@ abstract final class _LessonsPalette {
 class StudentLessonsScreen extends ConsumerWidget {
   const StudentLessonsScreen({super.key});
 
-  static const double _maxContentWidth = 1400;
+  static const double _maxContentWidth = AppDimensions.maxContentWidth;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AsyncValue<List<Lesson>> lessonsAsync = ref.watch(
       studentVisibleLessonsProvider,
     );
+    final int? lessonCount =
+        lessonsAsync.asData == null
+            ? null
+            : orderStudentLessons(lessonsAsync.asData!.value).length;
 
     return Scaffold(
       backgroundColor: _LessonsPalette.pageBackground,
@@ -55,7 +49,7 @@ class StudentLessonsScreen extends ConsumerWidget {
           SafeArea(
             child: Column(
               children: <Widget>[
-                const _LessonsHeader(),
+                _LessonsHeader(lessonCount: lessonCount),
                 Expanded(
                   child: lessonsAsync.when(
                     loading:
@@ -147,7 +141,9 @@ class _LessonsBackdrop extends StatelessWidget {
 }
 
 class _LessonsHeader extends StatelessWidget {
-  const _LessonsHeader();
+  const _LessonsHeader({required this.lessonCount});
+
+  final int? lessonCount;
 
   @override
   Widget build(BuildContext context) {
@@ -171,10 +167,7 @@ class _LessonsHeader extends StatelessWidget {
 
                 return Padding(
                   padding: EdgeInsets.symmetric(
-                    horizontal:
-                        constraints.maxWidth < 1120
-                            ? AppSpacing.md
-                            : AppSpacing.lg,
+                    horizontal: AppSpacing.lg,
                     vertical: isCompactHeight ? 7 : 10,
                   ),
                   child: Row(
@@ -219,36 +212,37 @@ class _LessonsHeader extends StatelessWidget {
                               'Lessons',
                               style: GoogleFonts.lexend(
                                 color: AppColors.textPrimary,
-                                fontSize: isCompactHeight ? 22 : 24,
+                                fontSize: isCompactHeight ? 24 : 26,
                                 fontWeight: FontWeight.w700,
                                 height: 1.1,
                               ),
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              'Choose a topic and start learning.',
+                              'Choose your next math lesson.',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.inter(
                                 color: AppColors.textSecondary,
-                                fontSize: isCompactHeight ? 13 : 14,
+                                fontSize: isCompactHeight ? 15 : 16,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      if (constraints.maxWidth >= 860) ...<Widget>[
+                      if (lessonCount != null &&
+                          constraints.maxWidth >= 720) ...<Widget>[
                         const SizedBox(width: AppSpacing.md),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md,
+                            horizontal: 14,
                             vertical: 9,
                           ),
                           decoration: BoxDecoration(
                             color: colorScheme.surfaceContainerHighest
-                                .withValues(alpha: 0.72),
-                            borderRadius: BorderRadius.circular(14),
+                                .withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: colorScheme.outlineVariant,
                             ),
@@ -257,18 +251,18 @@ class _LessonsHeader extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: <Widget>[
                               Icon(
-                                Icons.explore_rounded,
-                                size: 18,
+                                Icons.auto_awesome_motion_rounded,
+                                size: 16,
                                 color: colorScheme.primary,
                               ),
-                              const SizedBox(width: AppSpacing.sm),
+                              const SizedBox(width: 7),
                               Text(
-                                'BAYMATH LEARNING',
+                                '$lessonCount ${lessonCount == 1 ? 'LESSON' : 'LESSONS'}',
                                 style: GoogleFonts.inter(
-                                  color: colorScheme.onPrimaryContainer,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.8,
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
                                 ),
                               ),
                             ],
@@ -300,11 +294,7 @@ class _LessonCatalog extends StatelessWidget {
         final bool isShort = constraints.maxHeight < 590;
         final bool useTwoColumns = constraints.maxWidth >= 880;
         final double horizontalPadding =
-            constraints.maxWidth >= 1500
-                ? AppSpacing.xl
-                : constraints.maxWidth < 1120
-                ? AppSpacing.md
-                : AppSpacing.lg;
+            constraints.maxWidth >= 1500 ? AppSpacing.xl : AppSpacing.lg;
         final double verticalPadding = isShort ? 12 : AppSpacing.md;
         final double gap = isShort ? 12 : AppSpacing.md;
         final int rowCount =
@@ -319,24 +309,9 @@ class _LessonCatalog extends StatelessWidget {
             horizontalPadding,
             isShort ? AppSpacing.lg : AppSpacing.xl,
           ),
-          itemCount: rowCount + 1,
+          itemCount: rowCount,
           itemBuilder: (BuildContext context, int rowIndex) {
-            if (rowIndex == 0) {
-              return Padding(
-                padding: EdgeInsets.only(bottom: isShort ? 10 : 14),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: StudentLessonsScreen._maxContentWidth,
-                    ),
-                    child: _CatalogIntro(lessonCount: lessons.length),
-                  ),
-                ),
-              );
-            }
-
-            final int lessonIndex =
-                useTwoColumns ? (rowIndex - 1) * 2 : rowIndex - 1;
+            final int lessonIndex = useTwoColumns ? rowIndex * 2 : rowIndex;
 
             return Center(
               child: ConstrainedBox(
@@ -345,7 +320,7 @@ class _LessonCatalog extends StatelessWidget {
                 ),
                 child: Padding(
                   padding: EdgeInsets.only(
-                    bottom: rowIndex == rowCount ? 0 : gap,
+                    bottom: rowIndex == rowCount - 1 ? 0 : gap,
                   ),
                   child:
                       useTwoColumns
@@ -404,48 +379,6 @@ class _LessonCatalog extends StatelessWidget {
   }
 }
 
-class _CatalogIntro extends StatelessWidget {
-  const _CatalogIntro({required this.lessonCount});
-
-  final int lessonCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-
-    return Row(
-      children: <Widget>[
-        Text(
-          'YOUR LEARNING PATH',
-          style: GoogleFonts.inter(
-            color: colorScheme.primary,
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.05,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Divider(
-            height: 1,
-            thickness: 1,
-            color: colorScheme.outlineVariant,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          '$lessonCount ${lessonCount == 1 ? 'topic' : 'topics'}',
-          style: GoogleFonts.inter(
-            color: AppColors.textSecondary,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _LessonCard extends StatefulWidget {
   const _LessonCard({
     super.key,
@@ -474,37 +407,40 @@ class _LessonCardState extends State<_LessonCard> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final _LessonAccent accent = _LessonAccent.forIndex(widget.index);
+    final _LessonVisual visual = _LessonVisual.forTitle(widget.lesson.title);
     final String lessonNumber = (widget.index + 1).toString().padLeft(2, '0');
+    final Color labelColor =
+        Color.lerp(visual.color, AppColors.textPrimary, 0.22)!;
 
     return Semantics(
       button: true,
       label:
           'Lesson $lessonNumber. ${widget.lesson.title}. ${widget.lesson.body}',
       child: AnimatedScale(
-        scale: _isPressed ? 0.99 : 1,
-        duration: const Duration(milliseconds: 130),
+        scale: _isPressed ? 0.992 : 1,
+        duration: const Duration(milliseconds: 120),
         curve: Curves.easeOutCubic,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOutCubic,
+          height: widget.compact ? 142 : 148,
           decoration: BoxDecoration(
             color: colorScheme.surface,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color:
                   _isEmphasized
-                      ? accent.color.withValues(alpha: 0.52)
+                      ? visual.color.withValues(alpha: 0.52)
                       : colorScheme.outlineVariant,
               width: _isFocused ? 2 : 1,
             ),
             boxShadow: <BoxShadow>[
               BoxShadow(
                 color: AppColors.onPrimaryContainer.withValues(
-                  alpha: _isEmphasized ? 0.12 : 0.07,
+                  alpha: _isEmphasized ? 0.1 : 0.075,
                 ),
-                blurRadius: _isEmphasized ? 20 : 14,
-                offset: Offset(0, _isEmphasized ? 7 : 5),
+                blurRadius: _isEmphasized ? 18 : 15,
+                offset: Offset(0, _isEmphasized ? 6 : 4),
               ),
             ],
           ),
@@ -518,20 +454,12 @@ class _LessonCardState extends State<_LessonCard> {
               onFocusChange: (bool value) => setState(() => _isFocused = value),
               onHighlightChanged:
                   (bool value) => setState(() => _isPressed = value),
-              focusColor: accent.containerColor.withValues(alpha: 0.35),
-              hoverColor: accent.containerColor.withValues(alpha: 0.25),
-              splashColor: accent.color.withValues(alpha: 0.12),
+              focusColor: visual.containerColor.withValues(alpha: 0.35),
+              hoverColor: visual.containerColor.withValues(alpha: 0.25),
+              highlightColor: visual.containerColor.withValues(alpha: 0.18),
+              splashColor: visual.color.withValues(alpha: 0.12),
               child: Ink(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: <Color>[
-                      colorScheme.surface,
-                      accent.containerColor.withValues(alpha: 0.22),
-                    ],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-                ),
+                color: colorScheme.surface,
                 child: Stack(
                   children: <Widget>[
                     Positioned(
@@ -541,7 +469,7 @@ class _LessonCardState extends State<_LessonCard> {
                       child: Container(
                         width: 4,
                         decoration: BoxDecoration(
-                          color: accent.color,
+                          color: visual.color,
                           borderRadius: const BorderRadius.horizontal(
                             right: Radius.circular(4),
                           ),
@@ -549,81 +477,63 @@ class _LessonCardState extends State<_LessonCard> {
                       ),
                     ),
                     Padding(
-                      padding: EdgeInsets.all(
-                        widget.compact ? 14 : AppSpacing.md,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md,
+                        vertical: widget.compact ? 12 : 13,
                       ),
-                      child: Row(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          _LessonNumberTile(
-                            number: lessonNumber,
-                            accent: accent,
-                            compact: widget.compact,
+                          Row(
+                            children: <Widget>[
+                              _LessonVisualTile(
+                                key: ValueKey<String>(
+                                  'lesson_topic_visual_${widget.index}',
+                                ),
+                                visual: visual,
+                                compact: widget.compact,
+                              ),
+                              const SizedBox(width: 14),
+                              Text(
+                                'LESSON $lessonNumber',
+                                key: ValueKey<String>(
+                                  'lesson_label_${widget.index}',
+                                ),
+                                style: GoogleFonts.inter(
+                                  color: labelColor,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.75,
+                                ),
+                              ),
+                            ],
                           ),
-                          SizedBox(width: widget.compact ? 12 : AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(
-                                  'LESSON $lessonNumber',
-                                  style: GoogleFonts.inter(
-                                    color: accent.color,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                                const SizedBox(height: 5),
-                                Text(
-                                  widget.lesson.title,
-                                  style: GoogleFonts.lexend(
-                                    color: AppColors.textPrimary,
-                                    fontSize: widget.compact ? 16 : 17,
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.24,
-                                  ),
-                                ),
-                                const SizedBox(height: 7),
-                                Text(
-                                  widget.lesson.body,
-                                  maxLines: widget.compact ? 2 : 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.inter(
-                                    color: AppColors.textSecondary,
-                                    fontSize: widget.compact ? 13 : 13.5,
-                                    fontWeight: FontWeight.w400,
-                                    height: 1.42,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          SizedBox(
+                            height:
+                                widget.compact ? AppSpacing.xs : AppSpacing.sm,
                           ),
-                          const SizedBox(width: AppSpacing.sm),
                           Align(
-                            alignment: Alignment.center,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              width: AppDimensions.minTouchTarget,
-                              height: AppDimensions.minTouchTarget,
-                              decoration: BoxDecoration(
-                                color:
-                                    _isEmphasized
-                                        ? accent.color
-                                        : accent.containerColor,
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Icon(
-                                Icons.arrow_forward_rounded,
-                                size: 21,
-                                color:
-                                    _isEmphasized
-                                        ? colorScheme.onPrimary
-                                        : accent.color,
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 440),
+                              child: Text(
+                                widget.lesson.title,
+                                key: ValueKey<String>(
+                                  'lesson_title_${widget.index}',
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.lexend(
+                                  color: AppColors.textPrimary,
+                                  fontSize: widget.compact ? 19 : 20,
+                                  fontWeight: FontWeight.w600,
+                                  height: widget.compact ? 1.14 : 1.16,
+                                ),
                               ),
                             ),
                           ),
+                          const Spacer(),
                         ],
                       ),
                     ),
@@ -638,71 +548,195 @@ class _LessonCardState extends State<_LessonCard> {
   }
 }
 
-class _LessonNumberTile extends StatelessWidget {
-  const _LessonNumberTile({
-    required this.number,
-    required this.accent,
+class _LessonVisualTile extends StatelessWidget {
+  const _LessonVisualTile({
+    super.key,
+    required this.visual,
     required this.compact,
   });
 
-  final String number;
-  final _LessonAccent accent;
+  final _LessonVisual visual;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final double size = compact ? 50 : 54;
+    final double size = compact ? 46 : 48;
+    final double glyphExtent = compact ? 32 : 34;
 
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: accent.containerColor,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: <Widget>[
-          Icon(
-            Icons.auto_stories_rounded,
-            color: accent.color.withValues(alpha: 0.18),
-            size: compact ? 34 : 38,
+    return ExcludeSemantics(
+      child: SizedBox.square(
+        dimension: size,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: visual.containerColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: visual.color.withValues(alpha: 0.18)),
           ),
-          Text(
-            number,
-            style: GoogleFonts.lexend(
-              color: accent.color,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
+          child: Center(
+            child: SizedBox.square(
+              dimension: glyphExtent,
+              child: Center(
+                child:
+                    visual.symbol == null
+                        ? Icon(visual.icon, color: visual.color, size: 26)
+                        : FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            visual.symbol!,
+                            maxLines: 1,
+                            style: GoogleFonts.lexend(
+                              color: visual.color,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w700,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+              ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _LessonAccent {
-  const _LessonAccent({required this.color, required this.containerColor});
+class _LessonVisual {
+  const _LessonVisual({
+    required this.color,
+    required this.containerColor,
+    this.icon,
+    this.symbol,
+  }) : assert(icon != null || symbol != null);
 
   final Color color;
   final Color containerColor;
+  final IconData? icon;
+  final String? symbol;
 
-  static _LessonAccent forIndex(int index) {
-    return switch (index % 3) {
-      1 => const _LessonAccent(
+  static _LessonVisual forTitle(String title) {
+    final String normalizedTitle = title.toLowerCase();
+
+    if (normalizedTitle.contains('time')) {
+      return const _LessonVisual(
         color: _LessonsPalette.learningGreen,
         containerColor: _LessonsPalette.learningGreenContainer,
-      ),
-      2 => const _LessonAccent(
+        icon: Icons.schedule_rounded,
+      );
+    }
+    if (normalizedTitle.contains('probability')) {
+      return const _LessonVisual(
         color: AppColors.tertiary,
         containerColor: AppColors.tertiaryContainer,
-      ),
-      _ => const _LessonAccent(
+        icon: Icons.casino_outlined,
+      );
+    }
+    if (normalizedTitle.contains('ratio') ||
+        normalizedTitle.contains('proportion')) {
+      return const _LessonVisual(
         color: AppColors.primary,
         containerColor: AppColors.primaryContainer,
-      ),
-    };
+        icon: Icons.balance_rounded,
+      );
+    }
+    if (normalizedTitle.contains('circle')) {
+      return const _LessonVisual(
+        color: _LessonsPalette.learningGreen,
+        containerColor: _LessonsPalette.learningGreenContainer,
+        icon: Icons.donut_large_rounded,
+      );
+    }
+    if (normalizedTitle.contains('volume') ||
+        normalizedTitle.contains('surface area') ||
+        normalizedTitle.contains('solid figure')) {
+      return const _LessonVisual(
+        color: AppColors.tertiary,
+        containerColor: AppColors.tertiaryContainer,
+        icon: Icons.view_in_ar_rounded,
+      );
+    }
+    if (normalizedTitle.contains('area') ||
+        normalizedTitle.contains('perimeter') ||
+        normalizedTitle.contains('plane figure')) {
+      return const _LessonVisual(
+        color: AppColors.tertiary,
+        containerColor: AppColors.tertiaryContainer,
+        icon: Icons.category_rounded,
+      );
+    }
+    if (normalizedTitle.contains('factor') ||
+        normalizedTitle.contains('multiple') ||
+        normalizedTitle.contains('divisibility') ||
+        normalizedTitle.contains('prime') ||
+        normalizedTitle.contains('composite number')) {
+      return const _LessonVisual(
+        color: _LessonsPalette.learningGreen,
+        containerColor: _LessonsPalette.learningGreenContainer,
+        icon: Icons.grid_view_rounded,
+      );
+    }
+    if (normalizedTitle.contains('fraction') &&
+        normalizedTitle.contains('decimal')) {
+      return const _LessonVisual(
+        color: _LessonsPalette.learningGreen,
+        containerColor: _LessonsPalette.learningGreenContainer,
+        symbol: '\u00BD \u2194 .5',
+      );
+    }
+    if (normalizedTitle.contains('fraction')) {
+      return const _LessonVisual(
+        color: _LessonsPalette.learningGreen,
+        containerColor: _LessonsPalette.learningGreenContainer,
+        symbol: '\u00BD',
+      );
+    }
+    if (normalizedTitle.contains('decimal')) {
+      return const _LessonVisual(
+        color: AppColors.tertiary,
+        containerColor: AppColors.tertiaryContainer,
+        symbol: '0.5',
+      );
+    }
+    if (normalizedTitle.contains('place value')) {
+      return const _LessonVisual(
+        color: AppColors.primary,
+        containerColor: AppColors.primaryContainer,
+        symbol: '123',
+      );
+    }
+    if (normalizedTitle.contains('compar')) {
+      return const _LessonVisual(
+        color: AppColors.primary,
+        containerColor: AppColors.primaryContainer,
+        symbol: '< >',
+      );
+    }
+    if (normalizedTitle.contains('multipli') ||
+        normalizedTitle.contains('divid') ||
+        normalizedTitle.contains('mdas') ||
+        normalizedTitle.contains('gmdas') ||
+        normalizedTitle.contains('gemdas') ||
+        normalizedTitle.contains('exponent')) {
+      return const _LessonVisual(
+        color: AppColors.tertiary,
+        containerColor: AppColors.tertiaryContainer,
+        symbol: '\u00D7 \u00F7',
+      );
+    }
+    if (normalizedTitle.contains('add') ||
+        normalizedTitle.contains('subtract')) {
+      return const _LessonVisual(
+        color: AppColors.primary,
+        containerColor: AppColors.primaryContainer,
+        symbol: '+ \u2212',
+      );
+    }
+
+    return const _LessonVisual(
+      color: AppColors.primary,
+      containerColor: AppColors.primaryContainer,
+      icon: Icons.functions_rounded,
+    );
   }
 }
 

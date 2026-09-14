@@ -41,6 +41,10 @@ void main() {
         expect(find.byKey(const Key('login_password_field')), findsOneWidget);
         expect(find.byKey(const Key('login_submit_button')), findsOneWidget);
         expect(
+          find.byKey(const Key('login_forgot_password_button')),
+          findsOneWidget,
+        );
+        expect(
           find.byKey(const Key('login_registration_button')),
           findsOneWidget,
         );

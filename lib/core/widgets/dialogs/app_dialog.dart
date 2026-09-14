@@ -50,13 +50,13 @@ class AppDialog extends StatelessWidget {
     final (Color accent, IconData defaultIcon) = switch (type) {
       AppDialogType.info => (colorScheme.primary, Icons.info_outline),
       AppDialogType.success => (
-          semantic?.success ?? colorScheme.primary,
-          Icons.check_circle_outline,
-        ),
+        semantic?.success ?? colorScheme.primary,
+        Icons.check_circle_outline,
+      ),
       AppDialogType.warning => (
-          semantic?.warning ?? colorScheme.tertiary,
-          Icons.warning_amber_outlined,
-        ),
+        semantic?.warning ?? colorScheme.tertiary,
+        Icons.warning_amber_outlined,
+      ),
       AppDialogType.error => (colorScheme.error, Icons.error_outline),
       AppDialogType.confirmation => (colorScheme.primary, Icons.help_outline),
     };
@@ -73,14 +73,20 @@ class AppDialog extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(icon ?? defaultIcon, color: accent, size: AppDimensions.iconExtraLarge),
+              Icon(
+                icon ?? defaultIcon,
+                color: accent,
+                size: AppDimensions.iconExtraLarge,
+              ),
               const SizedBox(height: AppSpacing.md),
               Text(title, style: textTheme.titleLarge),
               if (message != null) ...<Widget>[
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   message!,
-                  style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
               if (content != null) ...<Widget>[
@@ -94,14 +100,11 @@ class AppDialog extends StatelessWidget {
               ],
               if (actions != null && actions!.isNotEmpty) ...<Widget>[
                 const SizedBox(height: AppSpacing.lg),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: <Widget>[
-                    for (int i = 0; i < actions!.length; i++) ...<Widget>[
-                      if (i > 0) const SizedBox(width: AppSpacing.sm),
-                      actions![i],
-                    ],
-                  ],
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: actions!,
                 ),
               ],
             ],
@@ -127,15 +130,16 @@ class AppDialog extends StatelessWidget {
     return showDialog<T>(
       context: context,
       barrierDismissible: barrierDismissible,
-      builder: (_) => AppDialog(
-        title: title,
-        type: type,
-        message: message,
-        icon: icon,
-        content: content,
-        actions: actions,
-        maxWidth: maxWidth,
-      ),
+      builder:
+          (_) => AppDialog(
+            title: title,
+            type: type,
+            message: message,
+            icon: icon,
+            content: content,
+            actions: actions,
+            maxWidth: maxWidth,
+          ),
     );
   }
 }

@@ -26,6 +26,17 @@ AppFailure mapExceptionToFailure(Object error) {
 void _logExceptionForDebugging(Object error) {
   if (!kDebugMode) return;
 
+  if (error is PostgrestException) {
+    debugPrint(
+      '[BayMath] PostgREST request failed: '
+      'code=${error.code}; '
+      'message=${error.message}; '
+      'details=${error.details}; '
+      'hint=${error.hint}',
+    );
+    return;
+  }
+
   if (error is SocketException) {
     final OSError? osError = error.osError;
     final String osDetails =
@@ -112,21 +123,53 @@ String? _extractFunctionErrorMessage(FunctionException error) {
 AppFailure _mapAuthException(AuthException error) {
   final String message = error.message.toLowerCase();
 
+  if (error is AuthRetryableFetchException) {
+    return const NetworkFailure();
+  }
+  if (error.statusCode == '429' ||
+      error.code == 'over_email_send_rate_limit' ||
+      error.code == 'over_request_rate_limit' ||
+      message.contains('rate limit') ||
+      message.contains('too many requests')) {
+    return const RateLimitFailure();
+  }
+
+  if (error is AuthWeakPasswordException || error.code == 'weak_password') {
+    return const ValidationFailure(
+      'Use a password that meets every security requirement.',
+    );
+  }
+  if (error.code == 'same_password') {
+    return const ValidationFailure(
+      'Choose a password different from your current password.',
+    );
+  }
   if (message.contains('invalid login credentials')) {
     return const ValidationFailure('Incorrect email or password.');
   }
-  if (message.contains('already registered') ||
+  if (error.code == 'user_already_exists' ||
+      message.contains('already registered') ||
       message.contains('already exists') ||
       message.contains('user already registered')) {
-    return const ValidationFailure('That email is already registered.');
+    return const ValidationFailure(
+      'An account with this email already exists.',
+    );
   }
   if (error.statusCode == '401' ||
       message.contains('expired') ||
       message.contains('invalid jwt')) {
     return const SessionExpiredFailure();
   }
+  if (error is AuthSessionMissingException ||
+      error.code == 'otp_expired' ||
+      error.code == 'bad_code_verifier' ||
+      error.code == 'flow_state_expired' ||
+      error.code == 'flow_state_not_found' ||
+      message.contains('session missing')) {
+    return const RecoveryLinkFailure();
+  }
 
-  return ServerFailure(error.message);
+  return const ServerFailure();
 }
 
 AppFailure _mapPostgrestException(PostgrestException error) {
@@ -141,6 +184,6 @@ AppFailure _mapPostgrestException(PostgrestException error) {
       if (error.code == '401' || error.message.toLowerCase().contains('jwt')) {
         return const SessionExpiredFailure();
       }
-      return ServerFailure(error.message);
+      return const ServerFailure();
   }
 }
