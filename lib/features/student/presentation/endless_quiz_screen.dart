@@ -409,6 +409,13 @@ class _QuestionViewport extends StatelessWidget {
   Widget build(BuildContext context) {
     if (question == null) {
       if (loadError != null) {
+        if (loadError is NoEndlessQuestionsFailure) {
+          return EndlessStatePanel(
+            title: 'No questions available yet',
+            message: loadError!.message,
+            icon: Icons.quiz_outlined,
+          );
+        }
         return EndlessStatePanel(
           title: 'Could not load a question',
           message: loadError!.message,

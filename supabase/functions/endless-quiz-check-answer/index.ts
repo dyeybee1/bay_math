@@ -9,6 +9,9 @@
 // 0018), bypassing PostgREST, so nothing upstream verifies the incoming
 // token. The verified student_id claim is what's passed to the DB — a
 // client-supplied student_id is never trusted.
+// app.svc_check_endless_answer (0097) also rejects question_id unless it is
+// in the same server-derived eligible pool used by fetching, preventing a
+// modified client from probing another grade's question.
 //
 // Response contract is deliberately minimal: 200 { is_correct } — nothing
 // else. svc_check_endless_answer itself only returns a plain boolean (no
@@ -18,7 +21,8 @@
 // function simply doesn't provide anything beyond the boolean, so nothing
 // else is fabricated here on top of it.
 //
-// 401 for a bad/missing/invalid JWT, 404/400 mapped from the underlying
+// 401 for a bad/missing/invalid JWT, 403 for an ineligible question, and
+// 404/400 mapped from the underlying
 // Postgres exception (choice not on question, or — should never happen
 // behind a validly-signed token, but defended anyway — the student row no
 // longer existing), 500 for anything unexpected. Same {code, message}
@@ -107,6 +111,9 @@ Deno.serve(async (req: Request) => {
 function classifyPostgresError(error: { message?: string }): { status: number; message: string } {
   const message = (error.message ?? "").toLowerCase();
 
+  if (message.includes("is not eligible for student")) {
+    return { status: 403, message: "That question is not available in your Endless Quiz." };
+  }
   if (message.includes("does not belong to question")) {
     return { status: 400, message: "That choice is not valid for this question." };
   }

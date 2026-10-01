@@ -226,5 +226,6 @@ grant execute on function app.admin_dashboard_summary_tiles() to authenticated;
 
 -- public.admin_dashboard_summary_tiles wrapper is untouched — its body
 -- (`select * from app.admin_dashboard_summary_tiles();`) and grants from
+
 -- 0039 already pass through whatever the app.* function returns, so no
 -- `create or replace` is needed here.

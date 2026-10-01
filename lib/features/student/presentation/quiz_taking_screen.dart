@@ -22,6 +22,7 @@ import '../../../core/repositories/quiz_attempts_repository.dart';
 import '../../../core/repositories/quiz_content_repository.dart';
 import '../../../core/repositories/student_enrollments_repository.dart';
 import '../../../core/widgets/widgets.dart';
+import '../data/student_quiz_submission_controller.dart';
 import 'quiz_results_screen.dart';
 import 'quiz_taking_session.dart';
 
@@ -180,12 +181,12 @@ class _QuizTakingScreenState extends ConsumerState<QuizTakingScreen> {
     setState(() {});
 
     try {
-      final QuizAttemptsRepository? attemptsRepo = ref.read(
-        quizAttemptsRepositoryProvider,
+      final StudentQuizSubmissionController? submissionController = ref.read(
+        studentQuizSubmissionControllerProvider,
       );
-      if (attemptsRepo == null) throw const SessionExpiredFailure();
+      if (submissionController == null) throw const SessionExpiredFailure();
 
-      await attemptsRepo.finalize(attempt.id);
+      await submissionController.submit(attempt.id);
       if (!mounted) return;
 
       unawaited(

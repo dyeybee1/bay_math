@@ -47,26 +47,38 @@ class Profile {
   final DateTime updatedAt;
 
   factory Profile.fromJson(Map<String, dynamic> json) {
-    final Object? approvedByProfile = json['approved_by_profile'];
-    final String? approvedByName =
-        approvedByProfile is Map<String, dynamic>
-            ? approvedByProfile['full_name'] as String?
-            : null;
-
     return Profile(
       id: json['id'] as String,
       role: ProfileRole.fromDb(json['role'] as String),
       status: ProfileStatus.fromDb(json['status'] as String),
       fullName: json['full_name'] as String,
       email: json['email'] as String,
-      approvedBy: json['approved_by'] as String?,
-      approvedByName: approvedByName,
-      approvedAt:
-          json['approved_at'] == null
-              ? null
-              : DateTime.parse(json['approved_at'] as String),
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      approvedBy: _nullableString(json['approved_by']),
+      approvedByName: _embeddedFullName(json['approved_by_profile']),
+      approvedAt: _nullableTimestamp(json['approved_at']),
+      createdAt: _requiredTimestamp(json['created_at'], 'created_at'),
+      updatedAt: _requiredTimestamp(json['updated_at'], 'updated_at'),
     );
+  }
+
+  static String? _nullableString(Object? value) =>
+      value is String && value.isNotEmpty ? value : null;
+
+  static String? _embeddedFullName(Object? value) {
+    final Object? row =
+        value is List<Object?> && value.isNotEmpty ? value.first : value;
+    if (row is! Map<Object?, Object?>) return null;
+    return _nullableString(row['full_name']);
+  }
+
+  static DateTime? _nullableTimestamp(Object? value) {
+    if (value is DateTime) return value;
+    return value is String ? DateTime.tryParse(value) : null;
+  }
+
+  static DateTime _requiredTimestamp(Object? value, String fieldName) {
+    final DateTime? parsed = _nullableTimestamp(value);
+    if (parsed != null) return parsed;
+    throw FormatException('Invalid or missing $fieldName timestamp.');
   }
 }

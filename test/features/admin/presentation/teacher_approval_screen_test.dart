@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:instructional_math_app/app/theme/app_theme.dart';
+import 'package:instructional_math_app/core/errors/app_failure.dart';
 import 'package:instructional_math_app/core/models/profile.dart';
 import 'package:instructional_math_app/core/providers/session_provider.dart';
 import 'package:instructional_math_app/core/providers/supabase_providers.dart';
@@ -156,7 +157,34 @@ void main() {
         find.byKey(const Key('teacher_accounts_history_action')),
       );
       await tester.pumpAndSettle();
-      expect(find.text('No processed Teacher requests yet.'), findsOneWidget);
+      expect(find.text('No registration history yet.'), findsOneWidget);
+    });
+
+    testWidgets('History retry recovers after a repository failure', (
+      WidgetTester tester,
+    ) async {
+      final _FakeProfilesRepository repository =
+          _repository()..processedFailuresRemaining = 1;
+
+      await tester.pumpWidget(_testApp(repository));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('teacher_accounts_history_action')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Something went wrong. Please try again.'),
+        findsOneWidget,
+      );
+      expect(repository.processedFetchCount, 1);
+
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Approved Teacher'), findsOneWidget);
+      expect(find.text('Rejected Teacher'), findsOneWidget);
+      expect(repository.processedFetchCount, 2);
     });
 
     testWidgets('fits laptop, desktop, and narrow web content widths', (
@@ -222,6 +250,8 @@ class _FakeProfilesRepository extends ProfilesRepository {
   final List<String> approvedTeacherIds = <String>[];
   final List<String> approvedByIds = <String>[];
   final List<String> rejectedTeacherIds = <String>[];
+  int processedFailuresRemaining = 0;
+  int processedFetchCount = 0;
 
   @override
   Future<List<Profile>> fetchTeachers({ProfileStatus? status}) async {
@@ -230,8 +260,14 @@ class _FakeProfilesRepository extends ProfilesRepository {
   }
 
   @override
-  Future<List<Profile>> fetchProcessedTeachers() async =>
-      List<Profile>.unmodifiable(_processed);
+  Future<List<Profile>> fetchProcessedTeachers() async {
+    processedFetchCount += 1;
+    if (processedFailuresRemaining > 0) {
+      processedFailuresRemaining -= 1;
+      throw const ServerFailure();
+    }
+    return List<Profile>.unmodifiable(_processed);
+  }
 
   @override
   Future<void> approveTeacher({

@@ -16,7 +16,12 @@ class AppRoutes {
 
   // --- App shells ---
   static const String teacherHome = '/teacher';
+  static const String teacherLessons = '/teacher?tab=lessons';
+  static const String teacherLessonView = '/teacher/lessons/:lessonId/view';
   static const String adminHome = '/admin';
+
+  static String teacherLessonViewPath(String lessonId) =>
+      '/teacher/lessons/${Uri.encodeComponent(lessonId)}/view';
 
   // --- Student (custom-JWT, not Supabase Auth — Phase 4 §2/§6) ---
   // Student sessions remain separate from Supabase Auth and in-memory only

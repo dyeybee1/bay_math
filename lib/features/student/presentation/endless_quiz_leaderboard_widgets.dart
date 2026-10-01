@@ -1,22 +1,14 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../../app/constants/app_spacing.dart';
 import '../../../app/theme/app_colors.dart';
 import '../../../core/models/endless_quiz_leaderboard.dart';
+import '../widgets/student_avatar.dart';
 import 'endless_quiz_design.dart';
 
-String endlessInitials(String name) {
-  final List<String> parts = name.trim().split(RegExp(r'\s+'));
-  if (parts.isEmpty || parts.first.isEmpty) return '?';
-  if (parts.length == 1) {
-    return parts.first
-        .substring(0, math.min(2, parts.first.length))
-        .toUpperCase();
-  }
-  return '${parts.first[0]}${parts[1][0]}'.toUpperCase();
-}
+/// Kept for existing presentation callers; avatar rendering now delegates to
+/// the shared Student avatar component.
+String endlessInitials(String name) => studentInitials(name);
 
 ({Color color, Color container}) endlessRankColors(int rank) {
   return switch (rank) {
@@ -68,44 +60,6 @@ class EndlessRankBadge extends StatelessWidget {
   }
 }
 
-class EndlessInitialAvatar extends StatelessWidget {
-  const EndlessInitialAvatar({
-    super.key,
-    required this.name,
-    this.size = 42,
-    this.highlighted = false,
-  });
-
-  final String name;
-  final double size;
-  final bool highlighted;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: '$name avatar',
-      image: true,
-      child: Container(
-        width: size,
-        height: size,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: highlighted ? AppColors.primary : AppColors.primaryContainer,
-          borderRadius: BorderRadius.circular(size * 0.36),
-        ),
-        child: Text(
-          endlessInitials(name),
-          style: endlessTitleStyle(
-            size * 0.3,
-            weight: FontWeight.w700,
-            color: highlighted ? Colors.white : AppColors.primary,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class EndlessLeaderboardRow extends StatelessWidget {
   const EndlessLeaderboardRow({
     super.key,
@@ -141,8 +95,9 @@ class EndlessLeaderboardRow extends StatelessWidget {
           children: <Widget>[
             EndlessRankBadge(rank: entry.rank, size: compact ? 32 : 38),
             SizedBox(width: compact ? 9 : 12),
-            EndlessInitialAvatar(
-              name: entry.fullName,
+            StudentAvatar(
+              fullName: entry.fullName,
+              avatarId: entry.avatarId,
               size: compact ? 34 : 40,
               highlighted: isCurrentStudent,
             ),
@@ -306,8 +261,9 @@ class _TopStudent extends StatelessWidget {
                 clipBehavior: Clip.none,
                 children: <Widget>[
                   Center(
-                    child: EndlessInitialAvatar(
-                      name: entry.fullName,
+                    child: StudentAvatar(
+                      fullName: entry.fullName,
+                      avatarId: entry.avatarId,
                       size: prominent ? 58 : 50,
                       highlighted: isCurrentStudent,
                     ),

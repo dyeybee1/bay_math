@@ -30,8 +30,7 @@ final FutureProvider<StudentStatistics> studentStatisticsProvider =
       final statisticsRepository = ref.watch(
         studentStatisticsRepositoryProvider,
       );
-      final progressRepository = ref.watch(lessonProgressRepositoryProvider);
-      if (statisticsRepository == null || progressRepository == null) {
+      if (statisticsRepository == null) {
         throw const SessionExpiredFailure();
       }
 
@@ -40,8 +39,9 @@ final FutureProvider<StudentStatistics> studentStatisticsProvider =
       final Future<List<Lesson>> lessonsFuture = ref.watch(
         studentVisibleLessonsProvider.future,
       );
-      final Future<Set<String>> completedIdsFuture =
-          progressRepository.fetchCompletedLessonIds();
+      final Future<Set<String>> completedIdsFuture = ref.watch(
+        studentCompletedLessonIdsProvider.future,
+      );
 
       return reconcileStudentLessonCounts(
         statistics: await statisticsFuture,
@@ -49,6 +49,67 @@ final FutureProvider<StudentStatistics> studentStatisticsProvider =
         completedLessonIds: await completedIdsFuture,
       );
     });
+
+/// One completed lesson together with its number in the visible curriculum.
+/// The number is retained here because filtering first would incorrectly label
+/// completed Lessons 3 and 4 as Lessons 1 and 2 in the drilldown.
+class StudentCompletedLesson {
+  const StudentCompletedLesson({
+    required this.lessonNumber,
+    required this.lesson,
+  });
+
+  final int lessonNumber;
+  final Lesson lesson;
+}
+
+/// Ordered lesson details for the Statistics completion drilldown.
+///
+/// This composes the same visible catalog and completed-ID providers used by
+/// the lesson landing page, so the detail rows cannot disagree with its badges
+/// or with the reconciled summary count above.
+final FutureProvider<List<StudentCompletedLesson>>
+studentCompletedLessonsProvider = FutureProvider<List<StudentCompletedLesson>>((
+  Ref ref,
+) async {
+  final List<Lesson> lessons = orderStudentLessons(
+    await ref.watch(studentVisibleLessonsProvider.future),
+  );
+  final Set<String> completedIds = await ref.watch(
+    studentCompletedLessonIdsProvider.future,
+  );
+
+  return <StudentCompletedLesson>[
+    for (final (int index, Lesson lesson) in lessons.indexed)
+      if (completedIds.contains(lesson.id))
+        StudentCompletedLesson(lessonNumber: index + 1, lesson: lesson),
+  ];
+});
+
+/// The single cache-coherency boundary for data changed by a successfully
+/// completed Student quiz.
+///
+/// [studentStatisticsProvider] is intentionally retained rather than globally
+/// auto-disposed, so it must be invalidated when its underlying quiz-attempt
+/// rows change. If Statistics is mounted, Riverpod refetches it immediately;
+/// otherwise the next visit starts a fresh fetch. Authentication and unrelated
+/// Student providers are deliberately untouched.
+final Provider<StudentStatisticsSynchronizer>
+studentStatisticsSynchronizerProvider = Provider<StudentStatisticsSynchronizer>(
+  (Ref ref) {
+    return StudentStatisticsSynchronizer(
+      onQuizCompleted: () => ref.invalidate(studentStatisticsProvider),
+    );
+  },
+);
+
+class StudentStatisticsSynchronizer {
+  const StudentStatisticsSynchronizer({required this.onQuizCompleted});
+
+  final void Function() onQuizCompleted;
+
+  void quizCompleted() => onQuizCompleted();
+}
 
 /// Replaces the summary view's independent lesson counts with counts derived
 /// from the same lesson collection displayed by the Student Lessons screen.

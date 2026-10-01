@@ -23,6 +23,7 @@ import '../../features/student/presentation/student_lessons_screen.dart';
 import '../../features/student/presentation/student_login_screen.dart';
 import '../../features/student/presentation/student_quizzes_screen.dart';
 import '../../features/student/presentation/student_statistics_screen.dart';
+import '../../features/teacher/presentation/teacher_lesson_viewer_screen.dart';
 import '../../features/teacher/presentation/teacher_shell_screen.dart';
 import '../app_variant.dart';
 import 'app_routes.dart';
@@ -75,7 +76,18 @@ final Provider<GoRouter> appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.teacherHome,
-        builder: (context, state) => const TeacherShellScreen(),
+        builder:
+            (context, state) => TeacherShellScreen(
+              initialDestination:
+                  state.uri.queryParameters['tab'] == 'lessons' ? 1 : 0,
+            ),
+      ),
+      GoRoute(
+        path: AppRoutes.teacherLessonView,
+        builder:
+            (context, state) => TeacherLessonViewerScreen(
+              lessonId: state.pathParameters['lessonId']!,
+            ),
       ),
       GoRoute(
         path: AppRoutes.adminHome,
@@ -236,6 +248,8 @@ String? redirectForStaffSession(
   }
 
   final bool atSplash = location == AppRoutes.splash;
+  final bool atTeacherLessonView =
+      location.startsWith('/teacher/lessons/') && location.endsWith('/view');
   final bool atAuthRoute =
       location == AppRoutes.login ||
       location == AppRoutes.register ||
@@ -254,7 +268,8 @@ String? redirectForStaffSession(
         case ProfileStatus.approved:
           return (atAuthRoute ||
                   atSplash ||
-                  location == AppRoutes.pendingApproval)
+                  location == AppRoutes.pendingApproval ||
+                  location == AppRoutes.unauthorized)
               ? AppRoutes.teacherHome
               : null;
         case ProfileStatus.rejected:
@@ -266,7 +281,13 @@ String? redirectForStaffSession(
       }
 
     case SessionAdmin _:
-      return (atAuthRoute || atSplash) ? AppRoutes.adminHome : null;
+      if (atTeacherLessonView) return AppRoutes.adminHome;
+      return (atAuthRoute ||
+              atSplash ||
+              location == AppRoutes.pendingApproval ||
+              location == AppRoutes.unauthorized)
+          ? AppRoutes.adminHome
+          : null;
 
     case SessionStudent _:
       // Not reachable until Phase 3 implements student login.

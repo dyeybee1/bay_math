@@ -55,14 +55,32 @@ class SchoolYearsScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _close(WidgetRef ref, BuildContext context, SchoolYear year) async {
-    try {
-      await ref.read(schoolYearsRepositoryProvider).close(year.id);
-      ref.invalidate(schoolYearsListProvider);
-    } on AppFailure catch (failure) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(failure.message)));
-      }
+  Future<void> _requestClose(
+    WidgetRef ref,
+    BuildContext context,
+    SchoolYear year,
+  ) async {
+    final bool? closed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (_) => _CloseSchoolYearDialog(
+            year: year,
+            onClose: () async {
+              await ref.read(schoolYearsRepositoryProvider).close(year.id);
+              ref.invalidate(schoolYearsListProvider);
+            },
+          ),
+    );
+
+    if (closed == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_schoolYearName(year.label)} has been closed successfully.',
+          ),
+        ),
+      );
     }
   }
 
@@ -141,10 +159,11 @@ class SchoolYearsScreen extends ConsumerWidget {
                           if (year.status == SchoolYearStatus.active) ...<Widget>[
                             const SizedBox(width: AppSpacing.sm),
                             AppButton(
+                              key: Key('close_school_year_${year.id}'),
                               label: 'Close',
                               variant: AppButtonVariant.text,
                               size: AppComponentSize.small,
-                              onPressed: () => _close(ref, context, year),
+                              onPressed: () => _requestClose(ref, context, year),
                             ),
                           ],
                         ],
@@ -165,6 +184,142 @@ class SchoolYearsScreen extends ConsumerWidget {
 
   String _formatDate(DateTime date) =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+}
+
+String _schoolYearName(String label) {
+  if (label.toLowerCase().startsWith('school year')) return label;
+  return 'School Year $label';
+}
+
+class _CloseSchoolYearDialog extends StatefulWidget {
+  const _CloseSchoolYearDialog({required this.year, required this.onClose});
+
+  final SchoolYear year;
+  final Future<void> Function() onClose;
+
+  @override
+  State<_CloseSchoolYearDialog> createState() => _CloseSchoolYearDialogState();
+}
+
+class _CloseSchoolYearDialogState extends State<_CloseSchoolYearDialog> {
+  final TextEditingController _confirmationController = TextEditingController();
+
+  bool _isClosing = false;
+  String? _errorMessage;
+
+  bool get _isConfirmed => _confirmationController.text == 'CLOSE';
+
+  @override
+  void dispose() {
+    _confirmationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_isClosing || !_isConfirmed) return;
+
+    setState(() {
+      _isClosing = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await widget.onClose();
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } on AppFailure catch (failure) {
+      if (!mounted) return;
+      setState(() {
+        _isClosing = false;
+        _errorMessage = failure.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isClosing = false;
+        _errorMessage = 'Could not close this school year. Please try again.';
+      });
+    }
+  }
+
+  void _onSubmitted(String _) {
+    if (_isConfirmed && !_isClosing) _submit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final String schoolYearName = _schoolYearName(widget.year.label);
+
+    return PopScope(
+      canPop: !_isClosing,
+      child: AppDialog(
+        title: 'Close School Year?',
+        type: AppDialogType.error,
+        icon: Icons.event_busy_outlined,
+        message:
+            'Are you sure you want to close $schoolYearName?\n\n'
+            'Closing this school year is a permanent action and cannot be undone.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              'Type CLOSE to confirm.',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppTextField(
+              key: const Key('close_school_year_confirmation_field'),
+              controller: _confirmationController,
+              label: 'Confirmation',
+              hint: 'CLOSE',
+              autofocus: true,
+              enabled: !_isClosing,
+              textInputAction: TextInputAction.done,
+              onChanged: (_) => setState(() => _errorMessage = null),
+              onSubmitted: _onSubmitted,
+            ),
+            if (_errorMessage != null) ...<Widget>[
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(Icons.error_outline, size: 18, color: colorScheme.error),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      key: const Key('close_school_year_error'),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: colorScheme.error),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+        actions: <Widget>[
+          AppButton(
+            key: const Key('cancel_close_school_year'),
+            label: 'Cancel',
+            variant: AppButtonVariant.text,
+            onPressed:
+                _isClosing ? null : () => Navigator.of(context).pop(false),
+          ),
+          AppButton(
+            key: const Key('confirm_close_school_year'),
+            label: 'Close School Year',
+            variant: AppButtonVariant.danger,
+            isLoading: _isClosing,
+            onPressed: _isConfirmed && !_isClosing ? _submit : null,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _NewYearFormResult {

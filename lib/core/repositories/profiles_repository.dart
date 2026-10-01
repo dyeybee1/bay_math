@@ -61,15 +61,17 @@ class ProfilesRepository {
   }
 
   /// Approved and rejected Teacher registrations, most recently processed
-  /// first. `updated_at` is maintained by the existing database trigger and
-  /// is the only timestamp that covers both outcomes (`approved_at` exists
-  /// only for approvals).
+  /// first. Approvals use their immutable `approved_at`; rejections use
+  /// trigger-maintained `updated_at`, because the schema has no `rejected_at`.
   Future<List<Profile>> fetchProcessedTeachers() async {
     try {
       final List<Map<String, dynamic>> data = await _client
           .from('profiles')
           .select(
-            '*, approved_by_profile:profiles!profiles_approved_by_fkey(full_name)',
+            // A many-to-one self-reference is embedded through the FK column
+            // itself. A constraint hint produces PGRST200; `profiles!approved_by`
+            // selects the reverse one-to-many relationship instead.
+            '*, approved_by_profile:approved_by(full_name)',
           )
           .eq('role', 'teacher')
           .inFilter('status', <String>[
@@ -77,11 +79,28 @@ class ProfilesRepository {
             ProfileStatus.rejected.name,
           ])
           .order('updated_at', ascending: false);
-      return data.map(Profile.fromJson).toList();
+      final List<Profile> profiles = data
+          .map(Profile.fromJson)
+          .where(
+            (Profile profile) =>
+                profile.status == ProfileStatus.approved ||
+                profile.status == ProfileStatus.rejected,
+          )
+          .toList(growable: false);
+      profiles.sort(
+        (Profile left, Profile right) =>
+            _processedAt(right).compareTo(_processedAt(left)),
+      );
+      return profiles;
     } catch (error) {
       throw mapExceptionToFailure(error);
     }
   }
+
+  static DateTime _processedAt(Profile profile) =>
+      profile.status == ProfileStatus.approved
+          ? profile.approvedAt ?? profile.updatedAt
+          : profile.updatedAt;
 
   /// Every non-archived Teacher account. Account Management treats pending,
   /// approved, rejected, and suspended accounts as its active-directory side;

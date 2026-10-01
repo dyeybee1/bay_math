@@ -2,7 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/admin_dashboard.dart';
-import '../../../core/models/section.dart' show GradeLevel;
+import '../../../core/models/section.dart' show GradeLevel, Section, SectionStatus;
+import '../../../core/models/teacher_section.dart';
 import '../../../core/providers/session_provider.dart';
 import '../../../core/providers/supabase_providers.dart';
 import '../../../core/repositories/admin_dashboard_repository.dart';
@@ -121,6 +122,34 @@ final FutureProvider<List<AdminTeacherListEntry>> adminTeachersListProvider =
     FutureProvider<List<AdminTeacherListEntry>>((ref) {
   _requireAdminSession(ref);
   return ref.watch(adminDashboardRepositoryProvider).fetchTeachersList();
+});
+
+/// Existing section assignments resolved for the Teacher details drill-down.
+/// This composes the established repositories and does not introduce a new
+/// API or alter assignment behavior.
+final adminTeacherSectionsProvider =
+    FutureProvider.family<List<Section>, String>((ref, teacherId) async {
+  _requireAdminSession(ref);
+  final List<TeacherSection> assignments = await ref
+      .watch(teacherSectionsRepositoryProvider)
+      .fetchForTeacher(teacherId);
+  if (assignments.isEmpty) return const <Section>[];
+
+  final List<Section> sections = await ref
+      .watch(sectionsRepositoryProvider)
+      .fetchByIds(
+        assignments
+            .map((TeacherSection assignment) => assignment.sectionId)
+            .toList(),
+      );
+  final Map<String, Section> byId = <String, Section>{
+    for (final Section section in sections) section.id: section,
+  };
+  return assignments
+      .map((TeacherSection assignment) => byId[assignment.sectionId])
+      .whereType<Section>()
+      .where((Section section) => section.status == SectionStatus.active)
+      .toList();
 });
 
 final FutureProvider<List<AdminSectionListEntry>> adminSectionsListProvider =

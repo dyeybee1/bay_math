@@ -9,6 +9,7 @@ import '../../../core/models/section.dart';
 import '../../../core/models/student.dart';
 import '../../../core/providers/student_profile_provider.dart';
 import '../data/endless_quiz_leaderboard_providers.dart';
+import '../widgets/student_avatar.dart';
 import 'endless_quiz_design.dart';
 import 'endless_quiz_leaderboard_widgets.dart';
 
@@ -206,8 +207,9 @@ class _YourStanding extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             Row(
               children: <Widget>[
-                EndlessInitialAvatar(
-                  name: myRank.fullName,
+                StudentAvatar(
+                  fullName: myRank.fullName,
+                  avatarId: myRank.avatarId,
                   size: 50,
                   highlighted: true,
                 ),

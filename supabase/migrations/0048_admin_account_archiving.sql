@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration: 0047_admin_account_archiving.sql
+-- Migration: 0048_admin_account_archiving.sql
 -- Part 1 of 4 (Admin Account Management + Archive). Adds archive/restore
 -- support for both account types Admin manages directly:
 --   - Teachers (public.profiles, role='teacher') via a new profile_status

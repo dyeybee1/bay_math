@@ -2,8 +2,11 @@
 //
 // Phase 7 (Endless Quiz) Connection-B function #1 of 2. Returns one
 // sanitized (no is_correct) practice question, chosen uniformly at random
-// from the entire question_bank — not scoped to a section, quiz, or
-// lesson. Every call is independent: no attempt/session row backs Endless
+// from the Student's server-derived eligible quiz question ids. Eligibility
+// is enforced by app.svc_fetch_endless_question (0097): active enrollment
+// and section -> same-grade built-ins plus teacher quizzes assigned to that
+// exact section -> DISTINCT canonical question ids. Every call is independent:
+// no attempt/session row backs Endless
 // Quiz, so there is nothing here to resume and nothing to keep stable
 // across calls. A fresh random question every call is the intended
 // behavior — this deliberately does NOT do what quiz-content-for-attempt
@@ -19,15 +22,14 @@
 // token. The verified student_id claim is what's passed to the DB — a
 // client-supplied student_id is never trusted.
 //
-// app.svc_fetch_endless_question independently re-verifies that
-// p_student_id is a real student before returning anything (Endless Quiz
-// isn't scoped to a section/quiz, so that's the only ownership check that
-// applies here) — this function does not duplicate that check.
+// app.svc_fetch_endless_question independently re-verifies the Student and
+// active enrollment before returning anything. It accepts no grade parameter,
+// so a modified client cannot spoof grade eligibility.
 //
 // Response contract: 200 { question_id, prompt_text, choices: [...] } — no
 // is_correct anywhere, same as quiz-content-for-attempt's sanitized shape.
 // 401 for a bad/missing/invalid JWT, 404/400 mapped from the underlying
-// Postgres exception (e.g. no questions in the bank at all, or — should
+// Postgres exception (e.g. no eligible questions for the grade, or — should
 // never happen behind a validly-signed token, but defended anyway — the
 // student row no longer existing), 500 for anything unexpected. Same
 // {code, message} shape as every other function in this project.
@@ -93,7 +95,10 @@ Deno.serve(async (req: Request) => {
 
     if (fetchError) {
       const { status, message } = classifyPostgresError(fetchError);
-      return jsonResponse(status, { code: "fetch_question_failed", message });
+      const code = message.startsWith("No Endless Quiz questions")
+        ? "no_endless_questions"
+        : "fetch_question_failed";
+      return jsonResponse(status, { code, message });
     }
 
     const question = buildQuestion((rows ?? []) as EndlessQuestionRow[]);
@@ -150,8 +155,11 @@ function buildQuestion(rows: EndlessQuestionRow[]) {
 function classifyPostgresError(error: { message?: string }): { status: number; message: string } {
   const message = (error.message ?? "").toLowerCase();
 
-  if (message.includes("no questions available in question_bank")) {
-    return { status: 404, message: "No practice questions are available right now." };
+  if (message.includes("no endless quiz questions available")) {
+    return { status: 404, message: "No Endless Quiz questions are available for your grade yet." };
+  }
+  if (message.includes("no active enrollment")) {
+    return { status: 404, message: "Your class enrollment is not active. Please ask your teacher for help." };
   }
   if (message.includes("not found")) {
     // "student % not found" — should be unreachable behind a validly

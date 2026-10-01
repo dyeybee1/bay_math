@@ -1,119 +1,257 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/constants/app_colors.dart';
 import '../../../app/constants/app_spacing.dart';
+import '../../../app/constants/app_text_styles.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/section.dart';
 import '../../../core/models/teacher_dashboard.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
 import '../data/teacher_dashboard_providers.dart';
+import '../widgets/teacher_drilldown_widgets.dart';
 
-/// Phase 9 (Teacher Dashboard) — Part 4: the per-student roster drill-down,
-/// reached by tapping any of the four summary tiles on
-/// [TeacherDashboardScreen] (all four tiles open this same screen — the
-/// approved design has no metric-specific filtered roster, e.g. no "only
-/// students below 70%" variant).
-///
-/// Takes no constructor arguments, unlike `SectionWorkspaceScreen` (the
-/// other pushed-detail-screen precedent in this codebase): that screen's
-/// `section` argument is data with no other home, whereas the scope here
-/// ([selectedGradeLevelProvider] / [selectedSectionIdProvider]) already
-/// lives in global `StateProvider`s that both this screen and the
-/// dashboard behind it watch directly — so the filter carries over
-/// automatically on push and stays intact on pop, with nothing to thread
-/// through a constructor.
+/// Per-student roster reached from the Teacher Dashboard summary cards.
 class TeacherDashboardRosterScreen extends ConsumerWidget {
   const TeacherDashboardRosterScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<DashboardRosterEntry>> rosterAsync = ref.watch(dashboardRosterProvider);
+    final AsyncValue<List<DashboardRosterEntry>> rosterAsync = ref.watch(
+      dashboardRosterProvider,
+    );
     final GradeLevel? selectedGrade = ref.watch(selectedGradeLevelProvider);
     final String? selectedSectionId = ref.watch(selectedSectionIdProvider);
-
-    final String headerText = _scopeLabel(
+    final String scopeLabel = _scopeLabel(
       selectedGrade: selectedGrade,
       selectedSectionId: selectedSectionId,
       roster: rosterAsync.value,
     );
 
-    return Scaffold(
-      appBar: AppBar(title: Text(headerText)),
-      body: AppPageContainer(
-        scrollable: true,
-        child: rosterAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(AppSpacing.xl),
-            child: AppLoadingIndicator(),
-          ),
-          error: (error, _) => AppErrorState(
-            message: error is AppFailure ? error.message : 'Could not load the student roster.',
-            onRetry: () => ref.invalidate(dashboardRosterProvider),
-          ),
-          data: (List<DashboardRosterEntry> roster) {
-            if (roster.isEmpty) {
-              return const AppEmptyState(
+    return TeacherDrilldownPage(
+      title: 'Students',
+      subtitle: scopeLabel,
+      child: rosterAsync.when(
+        loading:
+            () => const TeacherStatePanel(
+              child: AppLoadingIndicator(message: 'Loading student roster…'),
+            ),
+        error:
+            (Object error, StackTrace _) => TeacherStatePanel(
+              child: AppErrorState(
+                message:
+                    error is AppFailure
+                        ? error.message
+                        : 'Could not load the student roster.',
+                onRetry: () => ref.invalidate(dashboardRosterProvider),
+              ),
+            ),
+        data: (List<DashboardRosterEntry> roster) {
+          if (roster.isEmpty) {
+            return const TeacherStatePanel(
+              child: AppEmptyState(
                 icon: Icons.people_outline,
-                title: 'No students yet',
-                description: 'Students enrolled in this scope will appear here.',
-              );
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                for (final DashboardRosterEntry entry in roster)
-                  AppCard(
-                    margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    size: AppComponentSize.small,
-                    header: Text(entry.fullName),
-                    subtitle: Text(entry.sectionName),
-                    trailing: entry.needsIntervention
-                        ? const AppBadge(label: 'Needs Help', variant: AppBadgeVariant.warning)
-                        : null,
-                    child: Text(
-                      formatPercent(entry.averageQuizScorePercent),
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-              ],
+                title: 'No students in this scope',
+                description:
+                    'Students assigned to this section will appear here.',
+              ),
             );
-          },
-        ),
+          }
+
+          final int attentionCount =
+              roster
+                  .where(
+                    (DashboardRosterEntry entry) => entry.needsIntervention,
+                  )
+                  .length;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              TeacherListSummary(
+                icon: Icons.people_outline,
+                title:
+                    '${roster.length} student${roster.length == 1 ? '' : 's'} in this view',
+                description:
+                    attentionCount == 0
+                        ? 'All listed students are currently on track.'
+                        : '$attentionCount may need additional support.',
+                badge:
+                    attentionCount == 0
+                        ? null
+                        : AppBadge(
+                          label: '$attentionCount need attention',
+                          variant: AppBadgeVariant.warning,
+                          icon: Icons.flag_outlined,
+                        ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              for (int index = 0; index < roster.length; index++) ...<Widget>[
+                _RosterStudentCard(entry: roster[index]),
+                if (index != roster.length - 1)
+                  const SizedBox(height: AppSpacing.md),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
 
-  /// Renders the current filter in plain language, e.g. "Grade 4 —
-  /// Einstein", "Grade 4 — All Sections", or "All Grades — All Sections".
-  /// The section's display name comes straight off the roster's own rows
-  /// ([DashboardRosterEntry.sectionName]) rather than a second lookup —
-  /// every in-scope row already carries it, and when [selectedSectionId]
-  /// is set every row shares the same one section, so the first row's
-  /// name is enough. Falls back to "Selected Section" only in the
-  /// vanishingly unlikely case the roster loaded empty for a section that
-  /// does still exist (e.g. filtered to a section with zero enrollments) —
-  /// the loading/error states are handled separately above, so by the
-  /// time this runs [roster] is either the real data or still null.
   String _scopeLabel({
     required GradeLevel? selectedGrade,
     required String? selectedSectionId,
     required List<DashboardRosterEntry>? roster,
   }) {
-    final String gradePart = selectedGrade?.label ?? 'All Grades';
+    final String gradePart = selectedGrade?.label ?? 'All grades';
+    if (selectedSectionId == null) return '$gradePart • All sections';
 
-    if (selectedSectionId == null) {
-      return '$gradePart — All Sections';
-    }
-
-    // Every row shares the same one section once `selectedSectionId` is
-    // set, so the first row's own `sectionName` is enough — no second
-    // lookup needed. Falls back to a generic label while loading (roster
-    // still null) or in the edge case of a section with zero enrollments
-    // (roster loaded but empty) — the empty/loading states themselves are
-    // handled separately in the body below.
     final String sectionPart =
-        (roster == null || roster.isEmpty) ? 'Selected Section' : roster.first.sectionName;
-    return '$gradePart — $sectionPart';
+        roster == null || roster.isEmpty
+            ? 'Selected section'
+            : roster.first.sectionName;
+    return '$gradePart • $sectionPart';
   }
+}
+
+class _RosterStudentCard extends StatelessWidget {
+  const _RosterStudentCard({required this.entry});
+
+  final DashboardRosterEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    return TeacherDrilldownCard(
+      semanticLabel: '${entry.fullName}, ${entry.sectionName}',
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final Widget identity = Row(
+            children: <Widget>[
+              AppAvatar(
+                initials: _initials(entry.fullName),
+                semanticLabel: '${entry.fullName} avatar',
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      entry.fullName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.lexend(
+                        size: 16,
+                        weight: FontWeight.w700,
+                        color: AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      '${_sectionLabel(entry.sectionName)} • '
+                      '${entry.quizzesCompleted} quiz'
+                      '${entry.quizzesCompleted == 1 ? '' : 'zes'} completed',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.inter(
+                        size: 12,
+                        color: AppColors.textSoft,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          final Widget metrics = Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              _AverageMetric(value: entry.averageQuizScorePercent),
+              if (entry.missedOrUnfinishedCount > 0)
+                AppBadge(
+                  label: '${entry.missedOrUnfinishedCount} missed/unfinished',
+                  variant: AppBadgeVariant.neutral,
+                  icon: Icons.schedule_outlined,
+                ),
+              if (entry.needsIntervention)
+                const AppBadge(
+                  label: 'Needs attention',
+                  variant: AppBadgeVariant.warning,
+                  icon: Icons.flag_outlined,
+                ),
+            ],
+          );
+
+          if (constraints.maxWidth < 680) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                identity,
+                const SizedBox(height: AppSpacing.md),
+                metrics,
+              ],
+            );
+          }
+          return Row(
+            children: <Widget>[
+              Expanded(child: identity),
+              const SizedBox(width: AppSpacing.lg),
+              metrics,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AverageMetric extends StatelessWidget {
+  const _AverageMetric({required this.value});
+
+  final num? value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          value == null ? 'No assessment data' : formatPercent(value),
+          style: AppTextStyles.inter(
+            size: value == null ? 12 : 16,
+            weight: FontWeight.w700,
+            color: value == null ? AppColors.textSoft : AppColors.navy,
+          ),
+        ),
+        if (value != null)
+          Text(
+            'Average score',
+            style: AppTextStyles.inter(size: 11, color: AppColors.textSoft),
+          ),
+      ],
+    );
+  }
+}
+
+String _initials(String name) {
+  final List<String> parts =
+      name
+          .trim()
+          .split(RegExp(r'\s+'))
+          .where((String part) => part.isNotEmpty)
+          .toList();
+  if (parts.isEmpty) return '?';
+  if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+  return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+}
+
+String _sectionLabel(String name) {
+  final String trimmed = name.trim();
+  return trimmed.toLowerCase().startsWith('section ')
+      ? trimmed
+      : 'Section $trimmed';
 }

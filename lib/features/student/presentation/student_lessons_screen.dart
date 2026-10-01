@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 export '../data/student_lessons_providers.dart'
-    show studentVisibleLessonsProvider;
+    show studentCompletedLessonIdsProvider, studentVisibleLessonsProvider;
 
 import '../../../app/constants/app_dimensions.dart';
 import '../../../app/constants/app_spacing.dart';
 import '../../../app/theme/app_colors.dart';
+import '../../../app/theme/app_semantic_colors.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/lesson.dart';
 import '../../../core/widgets/widgets.dart';
@@ -35,6 +36,9 @@ class StudentLessonsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final AsyncValue<List<Lesson>> lessonsAsync = ref.watch(
       studentVisibleLessonsProvider,
+    );
+    final AsyncValue<Set<String>> completedLessonIdsAsync = ref.watch(
+      studentCompletedLessonIdsProvider,
     );
     final int? lessonCount =
         lessonsAsync.asData == null
@@ -89,11 +93,14 @@ class StudentLessonsScreen extends ConsumerWidget {
                       );
 
                       return RefreshIndicator(
-                        onRefresh:
-                            () async =>
-                                ref.invalidate(studentVisibleLessonsProvider),
+                        onRefresh: () async {
+                          ref.invalidate(studentVisibleLessonsProvider);
+                          ref.invalidate(studentCompletedLessonIdsProvider);
+                        },
                         child: _LessonCatalog(
                           lessons: orderedLessons,
+                          completedLessonIds:
+                              completedLessonIdsAsync.value ?? const <String>{},
                           onOpenLesson: (Lesson lesson) {
                             Navigator.of(context).push(
                               MaterialPageRoute<void>(
@@ -282,9 +289,14 @@ class _LessonsHeader extends StatelessWidget {
 }
 
 class _LessonCatalog extends StatelessWidget {
-  const _LessonCatalog({required this.lessons, required this.onOpenLesson});
+  const _LessonCatalog({
+    required this.lessons,
+    required this.completedLessonIds,
+    required this.onOpenLesson,
+  });
 
   final List<Lesson> lessons;
+  final Set<String> completedLessonIds;
   final ValueChanged<Lesson> onOpenLesson;
 
   @override
@@ -335,6 +347,9 @@ class _LessonCatalog extends StatelessWidget {
                                     ),
                                     lesson: lessons[lessonIndex],
                                     index: lessonIndex,
+                                    isCompleted: completedLessonIds.contains(
+                                      lessons[lessonIndex].id,
+                                    ),
                                     compact: isShort,
                                     onTap:
                                         () =>
@@ -351,6 +366,10 @@ class _LessonCatalog extends StatelessWidget {
                                             ),
                                             lesson: lessons[lessonIndex + 1],
                                             index: lessonIndex + 1,
+                                            isCompleted: completedLessonIds
+                                                .contains(
+                                                  lessons[lessonIndex + 1].id,
+                                                ),
                                             compact: isShort,
                                             onTap:
                                                 () => onOpenLesson(
@@ -366,6 +385,9 @@ class _LessonCatalog extends StatelessWidget {
                             key: ValueKey<String>('lesson_card_$lessonIndex'),
                             lesson: lessons[lessonIndex],
                             index: lessonIndex,
+                            isCompleted: completedLessonIds.contains(
+                              lessons[lessonIndex].id,
+                            ),
                             compact: isShort,
                             onTap: () => onOpenLesson(lessons[lessonIndex]),
                           ),
@@ -384,12 +406,14 @@ class _LessonCard extends StatefulWidget {
     super.key,
     required this.lesson,
     required this.index,
+    required this.isCompleted,
     required this.compact,
     required this.onTap,
   });
 
   final Lesson lesson;
   final int index;
+  final bool isCompleted;
   final bool compact;
   final VoidCallback onTap;
 
@@ -407,15 +431,19 @@ class _LessonCardState extends State<_LessonCard> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    final AppSemanticColors? semantic =
+        Theme.of(context).extension<AppSemanticColors>();
     final _LessonVisual visual = _LessonVisual.forTitle(widget.lesson.title);
     final String lessonNumber = (widget.index + 1).toString().padLeft(2, '0');
     final Color labelColor =
         Color.lerp(visual.color, AppColors.textPrimary, 0.22)!;
+    final Color completedColor = semantic?.success ?? colorScheme.secondary;
 
     return Semantics(
       button: true,
       label:
-          'Lesson $lessonNumber. ${widget.lesson.title}. ${widget.lesson.body}',
+          'Lesson $lessonNumber. ${widget.lesson.title}. '
+          '${widget.isCompleted ? 'Completed. ' : ''}${widget.lesson.body}',
       child: AnimatedScale(
         scale: _isPressed ? 0.992 : 1,
         duration: const Duration(milliseconds: 120),
@@ -431,6 +459,8 @@ class _LessonCardState extends State<_LessonCard> {
               color:
                   _isEmphasized
                       ? visual.color.withValues(alpha: 0.52)
+                      : widget.isCompleted
+                      ? completedColor.withValues(alpha: 0.58)
                       : colorScheme.outlineVariant,
               width: _isFocused ? 2 : 1,
             ),
@@ -459,7 +489,12 @@ class _LessonCardState extends State<_LessonCard> {
               highlightColor: visual.containerColor.withValues(alpha: 0.18),
               splashColor: visual.color.withValues(alpha: 0.12),
               child: Ink(
-                color: colorScheme.surface,
+                color:
+                    widget.isCompleted
+                        ? (semantic?.successContainer ??
+                                colorScheme.secondaryContainer)
+                            .withValues(alpha: 0.18)
+                        : colorScheme.surface,
                 child: Stack(
                   children: <Widget>[
                     Positioned(
@@ -506,6 +541,17 @@ class _LessonCardState extends State<_LessonCard> {
                                   letterSpacing: 0.75,
                                 ),
                               ),
+                              if (widget.isCompleted) ...<Widget>[
+                                const Spacer(),
+                                AppBadge(
+                                  key: ValueKey<String>(
+                                    'lesson_completed_badge_${widget.index}',
+                                  ),
+                                  label: 'Completed',
+                                  variant: AppBadgeVariant.success,
+                                  icon: Icons.check_circle_rounded,
+                                ),
+                              ],
                             ],
                           ),
                           SizedBox(

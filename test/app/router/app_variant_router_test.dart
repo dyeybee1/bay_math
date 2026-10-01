@@ -103,6 +103,32 @@ void main() {
       );
     });
 
+    test('Teacher lesson view route is Teacher-only', () {
+      const String lessonPath = '/teacher/lessons/lesson-1/view';
+      expect(
+        redirectForStaffSession(
+          SessionTeacher(_profile(ProfileRole.teacher)),
+          lessonPath,
+        ),
+        isNull,
+      );
+      expect(
+        redirectForStaffSession(
+          SessionAdmin(_profile(ProfileRole.admin)),
+          lessonPath,
+        ),
+        AppRoutes.adminHome,
+      );
+      expect(
+        redirectForStaffSession(const SessionNone(), lessonPath),
+        AppRoutes.login,
+      );
+      expect(
+        AppRoutes.teacherLessonViewPath('lesson 1'),
+        '/teacher/lessons/lesson%201/view',
+      );
+    });
+
     test('recovery sessions cannot enter Teacher or Admin workspaces', () {
       for (final SessionState session in <SessionState>[
         SessionTeacher(_profile(ProfileRole.teacher)),
@@ -157,6 +183,46 @@ void main() {
         ),
         AppRoutes.adminHome,
       );
+    });
+
+    test('approved staff cannot remain trapped on Unauthorized', () {
+      expect(
+        redirectForStaffSession(
+          SessionTeacher(_profile(ProfileRole.teacher)),
+          AppRoutes.unauthorized,
+        ),
+        AppRoutes.teacherHome,
+      );
+      expect(
+        redirectForStaffSession(
+          SessionAdmin(_profile(ProfileRole.admin)),
+          AppRoutes.unauthorized,
+        ),
+        AppRoutes.adminHome,
+      );
+    });
+
+    test('disabled Teacher accounts remain Unauthorized', () {
+      for (final ProfileStatus status in <ProfileStatus>[
+        ProfileStatus.rejected,
+        ProfileStatus.suspended,
+        ProfileStatus.archived,
+      ]) {
+        expect(
+          redirectForStaffSession(
+            SessionTeacher(_profile(ProfileRole.teacher, status: status)),
+            AppRoutes.teacherHome,
+          ),
+          AppRoutes.unauthorized,
+        );
+        expect(
+          redirectForStaffSession(
+            SessionTeacher(_profile(ProfileRole.teacher, status: status)),
+            AppRoutes.unauthorized,
+          ),
+          isNull,
+        );
+      }
     });
   });
 }

@@ -59,8 +59,9 @@ String _initials(String name) {
   final List<String> p =
       name.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
   if (p.isEmpty) return '?';
-  if (p.length == 1)
+  if (p.length == 1) {
     return p[0].substring(0, math.min(2, p[0].length)).toUpperCase();
+  }
   return '${p[0][0]}${p[1][0]}'.toUpperCase();
 }
 
@@ -130,17 +131,25 @@ const List<_Dest> _kDestinations = <_Dest>[
 // Root shell
 // ─────────────────────────────────────────────────────────────────────────────
 class TeacherShellScreen extends ConsumerStatefulWidget {
-  const TeacherShellScreen({super.key});
+  const TeacherShellScreen({super.key, this.initialDestination = 0});
+
+  final int initialDestination;
 
   @override
   ConsumerState<TeacherShellScreen> createState() => _TeacherShellScreenState();
 }
 
 class _TeacherShellScreenState extends ConsumerState<TeacherShellScreen> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
 
   static const double _sidebarWidth = 248;
   static const double _mobileBreak = 700;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialDestination;
+  }
 
   void _onNavTap(int index) => setState(() => _selectedIndex = index);
 

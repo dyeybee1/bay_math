@@ -74,6 +74,16 @@ final class NotFoundFailure extends AppFailure {
   const NotFoundFailure([super.message = 'The requested item was not found.']);
 }
 
+/// The authenticated Student has no eligible quiz-linked questions for their
+/// authoritative grade/section. Kept distinct from a missing resource so the
+/// Endless Quiz screen can present a calm empty state instead of an error.
+final class NoEndlessQuestionsFailure extends AppFailure {
+  const NoEndlessQuestionsFailure([
+    super.message =
+        'No Endless Quiz questions are available for your grade yet.',
+  ]);
+}
+
 /// Anything unexpected. Logged for diagnosis; never shows a raw stack
 /// trace or database error string to the user.
 final class ServerFailure extends AppFailure {

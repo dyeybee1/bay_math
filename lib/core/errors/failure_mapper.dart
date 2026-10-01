@@ -83,6 +83,12 @@ AppFailure _mapFunctionException(FunctionException error) {
     );
   }
 
+  if (code == 'no_endless_questions') {
+    return NoEndlessQuestionsFailure(
+      message ?? 'No Endless Quiz questions are available for your grade yet.',
+    );
+  }
+
   switch (error.status) {
     case 401:
       return const SessionExpiredFailure();

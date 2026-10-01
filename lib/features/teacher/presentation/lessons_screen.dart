@@ -11,20 +11,18 @@ import '../../../core/models/section.dart';
 import '../../../core/providers/session_provider.dart';
 import '../../../core/providers/supabase_providers.dart';
 import '../../../core/widgets/widgets.dart';
+import '../data/teacher_lessons_providers.dart';
 import '../widgets/bm_shared_widgets.dart';
 import 'lesson_composer_screen.dart';
 import 'teacher_content_ordering.dart';
+import 'teacher_lesson_viewer_screen.dart';
 import 'teacher_shell_screen.dart' show MySection, mySectionsProvider;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Providers — UNCHANGED
-// ─────────────────────────────────────────────────────────────────────────────
+export '../data/teacher_lessons_providers.dart' show lessonsProvider;
 
-/// Built-in lessons plus the calling Teacher's own — RLS already scopes
-/// this to exactly that set (see `LessonsRepository.fetchVisibleToTeacher`).
-final lessonsProvider = FutureProvider<List<Lesson>>((ref) {
-  return ref.watch(lessonsRepositoryProvider).fetchVisibleToTeacher();
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// Providers
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Section ids [lessonId] is currently assigned to.
 final lessonSectionIdsProvider = FutureProvider.family<List<String>, String>((
@@ -92,6 +90,19 @@ class LessonsScreen extends ConsumerStatefulWidget {
 
 class _LessonsScreenState extends ConsumerState<LessonsScreen> {
   _LessonListScope _scope = _LessonListScope.all;
+
+  Future<void> _view(BuildContext context, Lesson lesson) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => TeacherLessonViewerScreen(
+              lessonId: lesson.id,
+              initialLesson: lesson,
+            ),
+        settings: RouteSettings(name: '/teacher/lessons/${lesson.id}/view'),
+      ),
+    );
+  }
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
     final SessionState session = await ref.read(sessionProvider.future);
@@ -236,6 +247,7 @@ class _LessonsScreenState extends ConsumerState<LessonsScreen> {
                     else
                       _LessonSequenceList(
                         lessons: visible,
+                        onView: (l) => _view(context, l),
                         onEdit: (l) => _edit(context, ref, l),
                         onDelete: (l) => _delete(context, ref, l),
                         onAssign: (l) => _assignSections(context, ref, l),
@@ -288,12 +300,14 @@ class _LessonListFilters extends StatelessWidget {
 class _LessonSequenceList extends StatelessWidget {
   const _LessonSequenceList({
     required this.lessons,
+    required this.onView,
     required this.onEdit,
     required this.onDelete,
     required this.onAssign,
   });
 
   final List<TeacherContentListEntry<Lesson>> lessons;
+  final void Function(Lesson) onView;
   final void Function(Lesson) onEdit;
   final void Function(Lesson) onDelete;
   final void Function(Lesson) onAssign;
@@ -314,6 +328,7 @@ class _LessonSequenceList extends StatelessWidget {
             isLast: i == lessons.length - 1,
             nodeSize: _nodeSize,
             nodeColWidth: _nodeColWidth,
+            onView: onView,
             onEdit: onEdit,
             onDelete: onDelete,
             onAssign: onAssign,
@@ -336,6 +351,7 @@ class _LessonSequenceRow extends StatefulWidget {
     required this.isLast,
     required this.nodeSize,
     required this.nodeColWidth,
+    required this.onView,
     required this.onEdit,
     required this.onDelete,
     required this.onAssign,
@@ -348,6 +364,7 @@ class _LessonSequenceRow extends StatefulWidget {
   final bool isLast;
   final double nodeSize;
   final double nodeColWidth;
+  final void Function(Lesson) onView;
   final void Function(Lesson) onEdit;
   final void Function(Lesson) onDelete;
   final void Function(Lesson) onAssign;
@@ -425,128 +442,143 @@ class _LessonSequenceRowState extends State<_LessonSequenceRow> {
                 cursor: SystemMouseCursors.click,
                 onEnter: (_) => setState(() => _hovered = true),
                 onExit: (_) => setState(() => _hovered = false),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color:
-                          _hovered ? const Color(0xFFC8D3EC) : AppColors.line,
+                child: Semantics(
+                  button: true,
+                  label: 'View ${widget.lesson.title}',
+                  child: InkWell(
+                    key: ValueKey<String>(
+                      'teacher_lesson_card_${widget.lesson.id}',
                     ),
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color:
-                            _hovered
-                                ? AppColors.accent.withValues(alpha: 0.08)
-                                : Colors.black.withValues(alpha: 0.04),
-                        blurRadius: _hovered ? 16 : 6,
-                        offset: Offset(0, _hovered ? 4 : 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: <Widget>[
-                      // Glyph square
-                      Container(
-                        width: 52,
-                        height: 52,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: glyphBg,
-                          borderRadius: BorderRadius.circular(12),
+                    onTap: () => widget.onView(widget.lesson),
+                    borderRadius: BorderRadius.circular(14),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.card,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color:
+                              _hovered
+                                  ? const Color(0xFFC8D3EC)
+                                  : AppColors.line,
                         ),
-                        child: Text(
-                          glyph.symbol,
-                          style: AppTextStyles.lexend(
-                            size: 18,
-                            weight: FontWeight.w700,
-                            color: glyphFg,
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color:
+                                _hovered
+                                    ? AppColors.accent.withValues(alpha: 0.08)
+                                    : Colors.black.withValues(alpha: 0.04),
+                            blurRadius: _hovered ? 16 : 6,
+                            offset: Offset(0, _hovered ? 4 : 2),
                           ),
-                        ),
+                        ],
                       ),
-                      const SizedBox(width: 14),
-                      // Title + description
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: <Widget>[
+                          // Glyph square
+                          Container(
+                            width: 52,
+                            height: 52,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: glyphBg,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              glyph.symbol,
+                              style: AppTextStyles.lexend(
+                                size: 18,
+                                weight: FontWeight.w700,
+                                color: glyphFg,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          // Title + description
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: <Widget>[
-                                Expanded(
-                                  child: Text(
-                                    widget.lesson.title,
-                                    style: AppTextStyles.lexend(
-                                      size: 16,
-                                      weight: FontWeight.w600,
-                                      color: AppColors.navy,
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: <Widget>[
+                                    Expanded(
+                                      child: Text(
+                                        widget.lesson.title,
+                                        style: AppTextStyles.lexend(
+                                          size: 16,
+                                          weight: FontWeight.w600,
+                                          color: AppColors.navy,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    BmSourceBadge(isBuiltIn: isBuiltIn),
+                                    if (!isBuiltIn) ...<Widget>[
+                                      const SizedBox(width: 8),
+                                      _LessonStatusBadge(
+                                        status: widget.lesson.publicationStatus,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                if (widget.lesson.body.isNotEmpty) ...<Widget>[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    widget.lesson.body,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTextStyles.inter(
+                                      size: 13,
+                                      color: AppColors.textSoft,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 10),
-                                BmSourceBadge(isBuiltIn: isBuiltIn),
+                                ],
+                                // Action row for teacher-owned lessons
                                 if (!isBuiltIn) ...<Widget>[
-                                  const SizedBox(width: 8),
-                                  _LessonStatusBadge(
-                                    status: widget.lesson.publicationStatus,
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: <Widget>[
+                                      _TextActionButton(
+                                        label: 'Assign Sections',
+                                        onPressed:
+                                            () =>
+                                                widget.onAssign(widget.lesson),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _TextActionButton(
+                                        label: 'Edit',
+                                        onPressed:
+                                            () => widget.onEdit(widget.lesson),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _TextActionButton(
+                                        label: 'Delete',
+                                        onPressed:
+                                            () =>
+                                                widget.onDelete(widget.lesson),
+                                        isDanger: true,
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ],
                             ),
-                            if (widget.lesson.body.isNotEmpty) ...<Widget>[
-                              const SizedBox(height: 4),
-                              Text(
-                                widget.lesson.body,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTextStyles.inter(
-                                  size: 13,
-                                  color: AppColors.textSoft,
-                                ),
-                              ),
-                            ],
-                            // Action row for teacher-owned lessons
-                            if (!isBuiltIn) ...<Widget>[
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: <Widget>[
-                                  _TextActionButton(
-                                    label: 'Assign Sections',
-                                    onPressed:
-                                        () => widget.onAssign(widget.lesson),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _TextActionButton(
-                                    label: 'Edit',
-                                    onPressed:
-                                        () => widget.onEdit(widget.lesson),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _TextActionButton(
-                                    label: 'Delete',
-                                    onPressed:
-                                        () => widget.onDelete(widget.lesson),
-                                    isDanger: true,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Trailing chevron
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: AppColors.grayText,
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      // Trailing chevron
-                      const Icon(
-                        Icons.chevron_right_rounded,
-                        size: 20,
-                        color: AppColors.grayText,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),

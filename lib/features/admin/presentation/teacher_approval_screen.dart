@@ -280,14 +280,10 @@ class _TeacherApprovalScreenState extends ConsumerState<TeacherApprovalScreen> {
             ),
           ),
       data: (List<Profile> list) {
-        final List<Profile> processed =
-            list
-                .where(
-                  (Profile teacher) =>
-                      teacher.status == ProfileStatus.approved ||
-                      teacher.status == ProfileStatus.rejected,
-                )
-                .toList();
+        // The repository contract is already approved/rejected only. Keeping
+        // that boundary out of the widget prevents this screen from loading a
+        // full account directory and hiding unrelated statuses client-side.
+        final List<Profile> processed = list;
         final List<Profile> filtered = switch (_historyFilter) {
           _HistoryFilter.all => processed,
           _HistoryFilter.approved =>
@@ -320,7 +316,7 @@ class _TeacherApprovalScreenState extends ConsumerState<TeacherApprovalScreen> {
               processed.isEmpty
                   ? const AppEmptyState(
                     icon: Icons.history_toggle_off_rounded,
-                    title: 'No processed Teacher requests yet.',
+                    title: 'No registration history yet.',
                   )
                   : filtered.isEmpty
                   ? AppEmptyState(

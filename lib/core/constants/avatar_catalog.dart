@@ -64,11 +64,19 @@ class AvatarCatalog {
     background: AppColors.primary,
   );
 
-  static AvatarOption byId(String? id) {
-    if (id == null) return fallback;
+  /// Returns the exact catalog entry for [id], or `null` when the student
+  /// has not selected an avatar (or an older value is no longer known).
+  ///
+  /// Use this when a UI has its own explicit fallback, such as initials.
+  static AvatarOption? findById(String? id) {
+    if (id == null) return null;
     for (final AvatarOption option in all) {
       if (option.id == id) return option;
     }
-    return fallback;
+    return null;
+  }
+
+  static AvatarOption byId(String? id) {
+    return findById(id) ?? fallback;
   }
 }

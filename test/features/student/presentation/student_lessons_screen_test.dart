@@ -117,6 +117,25 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('marks only completed lesson cards with a clear badge', (
+      WidgetTester tester,
+    ) async {
+      await _setLandscapeSize(tester, const Size(1280, 800));
+      await tester.pumpWidget(
+        _testApp(
+          lessons: _lessons,
+          completedLessonIds: <String>{'lesson-1', 'lesson-2'},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('lesson_completed_badge_0')), findsOneWidget);
+      expect(find.byKey(const Key('lesson_completed_badge_1')), findsOneWidget);
+      expect(find.text('Completed'), findsNWidgets(2));
+      expect(find.byKey(const Key('lesson_completed_badge_2')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('keeps representative long titles readable', (
       WidgetTester tester,
     ) async {
@@ -281,6 +300,7 @@ Future<void> _setLandscapeSize(WidgetTester tester, Size size) async {
 Widget _testApp({
   List<Lesson>? lessons,
   Future<List<Lesson>> Function()? lessonLoader,
+  Set<String> completedLessonIds = const <String>{},
 }) {
   return ProviderScope(
     key: UniqueKey(),
@@ -288,6 +308,9 @@ Widget _testApp({
       studentVisibleLessonsProvider.overrideWith(
         (Ref ref) =>
             lessonLoader?.call() ?? Future<List<Lesson>>.value(lessons),
+      ),
+      studentCompletedLessonIdsProvider.overrideWith(
+        (Ref ref) => Future<Set<String>>.value(completedLessonIds),
       ),
     ],
     child: MaterialApp(

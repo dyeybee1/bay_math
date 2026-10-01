@@ -2,7 +2,7 @@
 /// `public.endless_quiz_leaderboard_top` or
 /// `public.endless_quiz_leaderboard_my_rank` (0036) — both pass-through
 /// wrappers around the identically-shaped `app.*` functions, so both RPCs
-/// return exactly `{rank, full_name, best_endless_streak}` and share this
+/// return exactly `{rank, full_name, best_endless_streak, avatar_id}` and share this
 /// one model rather than two near-identical classes (see 0036's header on
 /// why the two functions are always consistent with each other: same
 /// grade-scoped, full-population `RANK()` ordering).
@@ -21,6 +21,7 @@ class LeaderboardEntry {
     required this.rank,
     required this.fullName,
     required this.bestEndlessStreak,
+    this.avatarId,
   });
 
   /// Shared rank when tied (`RANK()`, not `ROW_NUMBER()`) — two students
@@ -38,11 +39,17 @@ class LeaderboardEntry {
   /// second lookup.
   final int bestEndlessStreak;
 
+  /// Optional fixed-catalog key from `students.avatar_id`. Older deployments
+  /// of the leaderboard RPC omit this field, which intentionally maps to
+  /// `null` so the UI can fall back to initials.
+  final String? avatarId;
+
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
     return LeaderboardEntry(
       rank: json['rank'] as int,
       fullName: json['full_name'] as String,
       bestEndlessStreak: json['best_endless_streak'] as int,
+      avatarId: json['avatar_id'] as String?,
     );
   }
 }

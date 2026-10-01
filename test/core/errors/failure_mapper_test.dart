@@ -98,6 +98,25 @@ void main() {
     expect(failure.message, isNot(contains('profiles')));
   });
 
+  test('maps an empty Endless Quiz pool to its dedicated empty state', () {
+    final AppFailure failure = mapExceptionToFailure(
+      const FunctionException(
+        status: 404,
+        details: <String, String>{
+          'code': 'no_endless_questions',
+          'message':
+              'No Endless Quiz questions are available for your grade yet.',
+        },
+      ),
+    );
+
+    expect(failure, isA<NoEndlessQuestionsFailure>());
+    expect(
+      failure.message,
+      'No Endless Quiz questions are available for your grade yet.',
+    );
+  });
+
   test('debug logging includes complete PostgREST diagnostics', () {
     final DebugPrintCallback originalDebugPrint = debugPrint;
     final List<String> messages = <String>[];

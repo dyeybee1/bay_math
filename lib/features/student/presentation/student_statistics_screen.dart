@@ -51,6 +51,8 @@ class StudentStatisticsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AsyncValue<StudentStatistics> statsAsync = ref.watch(studentStatisticsProvider);
+    final AsyncValue<List<StudentCompletedLesson>> completedLessonsAsync =
+        ref.watch(studentCompletedLessonsProvider);
 
     // No Scaffold.appBar here on purpose: an AppBar always paints its own
     // opaque/elevated surface behind its content, which is exactly the
@@ -76,7 +78,11 @@ class StudentStatisticsScreen extends ConsumerWidget {
                         message: error is AppFailure ? error.message : 'Could not load your statistics.',
                         onRetry: () => ref.invalidate(studentStatisticsProvider),
                       ),
-                      data: (stats) => _StatisticsContent(stats: stats),
+                      data: (stats) => _StatisticsContent(
+                        stats: stats,
+                        completedLessons: completedLessonsAsync.value ?? const <StudentCompletedLesson>[],
+                        completionDetailsAvailable: completedLessonsAsync.hasValue,
+                      ),
                     ),
                   ),
                 ),
@@ -99,18 +105,18 @@ class _StatisticsHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: SizedBox(
         height: 44,
         child: Stack(
           alignment: Alignment.center,
           children: <Widget>[
-            const Align(
+            Align(
               alignment: Alignment.centerLeft,
               child: _BackButton(),
             ),
-            const Text(
+            Text(
               'Statistics',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: _kNavy),
             ),
@@ -508,9 +514,15 @@ class _VectorIconPainter extends CustomPainter {
 }
 
 class _StatisticsContent extends StatelessWidget {
-  const _StatisticsContent({required this.stats});
+  const _StatisticsContent({
+    required this.stats,
+    required this.completedLessons,
+    required this.completionDetailsAvailable,
+  });
 
   final StudentStatistics stats;
+  final List<StudentCompletedLesson> completedLessons;
+  final bool completionDetailsAvailable;
 
   @override
   Widget build(BuildContext context) {
@@ -545,7 +557,11 @@ class _StatisticsContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _SummaryTilesGrid(summary: summary),
+          _SummaryTilesGrid(
+            summary: summary,
+            completedLessons: completedLessons,
+            completionDetailsAvailable: completionDetailsAvailable,
+          ),
           const SizedBox(height: AppSpacing.md),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -604,6 +620,7 @@ class _SummaryTileData {
     required this.value,
     required this.accentColor,
     required this.accentBackground,
+    this.onTap,
   });
 
   final _StatIconKind icon;
@@ -619,12 +636,19 @@ class _SummaryTileData {
   /// combination always stays legible and matches the reference's soft
   /// icon-badge look.
   final Color accentBackground;
+  final VoidCallback? onTap;
 }
 
 class _SummaryTilesGrid extends StatelessWidget {
-  const _SummaryTilesGrid({required this.summary});
+  const _SummaryTilesGrid({
+    required this.summary,
+    required this.completedLessons,
+    required this.completionDetailsAvailable,
+  });
 
   final StudentSummaryTiles summary;
+  final List<StudentCompletedLesson> completedLessons;
+  final bool completionDetailsAvailable;
 
   @override
   Widget build(BuildContext context) {
@@ -637,6 +661,13 @@ class _SummaryTilesGrid extends StatelessWidget {
         value: '${summary.lessonsCompleted}/${summary.lessonsTotal}',
         accentColor: _kAccentBlue,
         accentBackground: _kAccentBlueContainer,
+        onTap: completionDetailsAvailable
+            ? () => _showCompletedLessonsDialog(
+                  context,
+                  completedLessons: completedLessons,
+                  lessonsTotal: summary.lessonsTotal,
+                )
+            : null,
       ),
       _SummaryTileData(
         icon: _StatIconKind.target,
@@ -685,36 +716,161 @@ class _SummaryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _StatCard(
+    final Widget card = _StatCard(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Stack(
+        children: <Widget>[
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 48,
+                height: 48,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: data.accentBackground,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: _VectorIcon(kind: data.icon, color: data.accentColor, size: 24),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                data.label,
+                style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280), height: 1.25),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                data.value,
+                style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: _kNavy),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+          if (data.onTap != null)
+            const Positioned(
+              right: 0,
+              top: 0,
+              child: Icon(Icons.chevron_right_rounded, color: _kAccentBlue, size: 24),
+            ),
+        ],
+      ),
+    );
+
+    if (data.onTap == null) return card;
+    return Semantics(
+      button: true,
+      label: '${data.label}: ${data.value}. View completed lessons.',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: const ValueKey<String>('lessons_completed_tile'),
+          borderRadius: BorderRadius.circular(20),
+          onTap: data.onTap,
+          child: card,
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showCompletedLessonsDialog(
+  BuildContext context, {
+  required List<StudentCompletedLesson> completedLessons,
+  required int lessonsTotal,
+}) {
+  return AppDialog.show<void>(
+    context,
+    title: 'Completed lessons',
+    type: AppDialogType.success,
+    icon: Icons.task_alt_rounded,
+    message: '${completedLessons.length} of $lessonsTotal '
+        '${lessonsTotal == 1 ? 'lesson' : 'lessons'} completed',
+    maxWidth: 560,
+    content: completedLessons.isEmpty
+        ? const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+            child: AppEmptyState(
+              icon: Icons.menu_book_rounded,
+              title: 'No completed lessons yet',
+              description: 'Finish a lesson to add it to your completed list.',
+            ),
+          )
+        : Column(
+            children: <Widget>[
+              for (final StudentCompletedLesson completed in completedLessons)
+                _CompletedLessonRow(completed: completed),
+            ],
+          ),
+    actions: <Widget>[
+      AppButton(label: 'Done', onPressed: () => Navigator.of(context).pop()),
+    ],
+  );
+}
+
+class _CompletedLessonRow extends StatelessWidget {
+  const _CompletedLessonRow({required this.completed});
+
+  final StudentCompletedLesson completed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final String number = completed.lessonNumber.toString().padLeft(2, '0');
+
+    return Container(
+      key: ValueKey<String>('completed_lesson_${completed.lesson.id}'),
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
         children: <Widget>[
           Container(
-            width: 48,
-            height: 48,
+            width: 42,
+            height: 42,
             alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: data.accentBackground,
-              borderRadius: BorderRadius.circular(14),
+            decoration: const BoxDecoration(color: _kAccentBlueContainer, shape: BoxShape.circle),
+            child: Text(
+              number,
+              style: const TextStyle(color: _kAccentBlue, fontWeight: FontWeight.w800),
             ),
-            child: _VectorIcon(kind: data.icon, color: data.accentColor, size: 24),
           ),
-          const SizedBox(height: 10),
-          Text(
-            data.label,
-            style: const TextStyle(fontSize: 14, color: Color(0xFF6B7280), height: 1.25),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'LESSON $number',
+                  style: const TextStyle(
+                    color: _kAccentBlue,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  completed.lesson.title,
+                  style: const TextStyle(
+                    color: _kNavy,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            data.value,
-            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: _kNavy),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          const SizedBox(width: AppSpacing.sm),
+          Icon(Icons.check_circle_rounded, color: colors.secondary, size: 24),
         ],
       ),
     );

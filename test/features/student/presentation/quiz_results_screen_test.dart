@@ -7,6 +7,7 @@ import 'package:instructional_math_app/core/models/content_source_type.dart';
 import 'package:instructional_math_app/core/models/quiz.dart';
 import 'package:instructional_math_app/core/models/quiz_attempt.dart';
 import 'package:instructional_math_app/core/models/quiz_attempt_answer.dart';
+import 'package:instructional_math_app/core/models/quiz_attempt_answer_choice_snapshot.dart';
 import 'package:instructional_math_app/features/student/presentation/quiz_results_screen.dart';
 
 void main() {
@@ -30,6 +31,27 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1 out of 3 correct'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('opens a read-only review with explicit answer labels', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_testApp(totalQuestions: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Quiz complete'), findsOneWidget);
+    expect(find.text('Question 1'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('review_answers_button')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review answers'), findsOneWidget);
+    expect(find.text('Question 1'), findsOneWidget);
+    expect(find.text('Your answer · Correct answer'), findsOneWidget);
+    expect(find.byType(Radio<Object>), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }
@@ -89,5 +111,22 @@ final QuizAttemptAnswer _answer = QuizAttemptAnswer(
   selectedChoiceId: 'choice-2',
   isCorrect: true,
   answeredAt: _timestamp,
-  choiceSnapshots: const [],
+  choiceSnapshots: const <QuizAttemptAnswerChoiceSnapshot>[
+    QuizAttemptAnswerChoiceSnapshot(
+      id: 'snapshot-1',
+      quizAttemptAnswerId: 'answer-1',
+      choiceTextSnapshot: '2',
+      wasCorrect: true,
+      wasSelected: true,
+      displayOrder: 1,
+    ),
+    QuizAttemptAnswerChoiceSnapshot(
+      id: 'snapshot-2',
+      quizAttemptAnswerId: 'answer-1',
+      choiceTextSnapshot: '3',
+      wasCorrect: false,
+      wasSelected: false,
+      displayOrder: 2,
+    ),
+  ],
 );

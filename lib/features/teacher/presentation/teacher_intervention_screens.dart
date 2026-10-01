@@ -1,114 +1,111 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/constants/app_colors.dart';
+import '../../../app/constants/app_radius.dart';
 import '../../../app/constants/app_spacing.dart';
+import '../../../app/constants/app_text_styles.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/section.dart';
 import '../../../core/models/teacher_dashboard.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
 import '../data/teacher_dashboard_providers.dart';
+import '../widgets/teacher_drilldown_widgets.dart';
 
-/// Teacher-scoped "Students Needing Help" / "Students Requiring
-/// Intervention" drill-down (0047) — three-level Grade Level -> Section ->
-/// Student, the identical shape and interaction as the Admin Dashboard's
-/// own intervention drill-down
-/// ([AdminInterventionStudentsScreen]/[AdminInterventionSectionsScreen]/
-/// [AdminInterventionStudentNamesScreen], 0041/0042), just teacher-scoped
-/// data ([TeacherInterventionStudent] / [dashboardInterventionStudentsProvider]
-/// instead of the admin equivalents) and pushed from two different entry
-/// points: the "Students Needing Help" tile on [TeacherDashboardScreen]
-/// (0037) and the "Students Requiring Intervention" tile on
-/// [ProgressReportsScreen] (0046). Both entry points push the same
-/// [TeacherInterventionStudentsScreen] — one shared drill-down, not two
-/// near-identical copies — so a teacher sees the same grouping regardless
-/// of which tile they tapped.
-///
-/// Student names are never shown at level 1 or 2, only counts — same
-/// "reveal names only once a specific section is picked" rule the Admin
-/// Dashboard's version uses, which matters even more here since a single
-/// teacher can hold multiple grade levels and sections at once and this
-/// grouping is precisely what keeps those students from blurring together.
-/// All three levels share the one [dashboardInterventionStudentsProvider]
-/// fetch; levels 2 and 3 just filter/group the already-fetched list
-/// client-side rather than re-fetching.
+/// Grade-level entry point for the Teacher intervention drill-down.
 class TeacherInterventionStudentsScreen extends ConsumerWidget {
   const TeacherInterventionStudentsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final AsyncValue<List<TeacherInterventionStudent>> studentsAsync =
-        ref.watch(dashboardInterventionStudentsProvider);
+    final AsyncValue<List<TeacherInterventionStudent>> studentsAsync = ref
+        .watch(dashboardInterventionStudentsProvider);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Students Needing Intervention')),
-      body: AppPageContainer(
-        scrollable: true,
-        child: studentsAsync.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(AppSpacing.xl),
-            child: AppLoadingIndicator(),
-          ),
-          error: (error, _) => AppErrorState(
-            message: error is AppFailure
-                ? error.message
-                : 'Could not load the intervention list.',
-            onRetry: () => ref.invalidate(dashboardInterventionStudentsProvider),
-          ),
-          data: (students) {
-            if (students.isEmpty) {
-              return const AppEmptyState(
-                icon: Icons.report_problem_outlined,
-                title: 'No students flagged',
-                description: 'Students needing intervention will appear here.',
-              );
-            }
-
-            // Group by grade level, preserving GradeLevel's declared
-            // (grade4 -> grade5 -> grade6) order rather than whatever
-            // order rows happen to arrive in.
-            final Map<GradeLevel, List<TeacherInterventionStudent>> byGrade =
-                <GradeLevel, List<TeacherInterventionStudent>>{};
-            for (final TeacherInterventionStudent s in students) {
-              (byGrade[s.gradeLevel] ??= <TeacherInterventionStudent>[]).add(s);
-            }
-            final List<GradeLevel> grades = byGrade.keys.toList()
-              ..sort((a, b) => a.index.compareTo(b.index));
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                for (final GradeLevel grade in grades)
-                  AppCard(
-                    margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    size: AppComponentSize.small,
-                    header: Text(grade.label),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => TeacherInterventionSectionsScreen(
-                          gradeLevel: grade,
-                          students: byGrade[grade]!,
-                        ),
-                      ),
-                    ),
-                    child: Text(
-                      '${byGrade[grade]!.length} student'
-                      '${byGrade[grade]!.length == 1 ? '' : 's'} flagged',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-              ],
+    return TeacherDrilldownPage(
+      title: 'Students Needing Intervention',
+      subtitle: 'Students who may need additional support',
+      child: studentsAsync.when(
+        loading:
+            () => const TeacherStatePanel(
+              child: AppLoadingIndicator(
+                message: 'Loading intervention overview…',
+              ),
+            ),
+        error:
+            (Object error, StackTrace _) => TeacherStatePanel(
+              child: AppErrorState(
+                message:
+                    error is AppFailure
+                        ? error.message
+                        : 'Could not load the intervention list.',
+                onRetry:
+                    () => ref.invalidate(dashboardInterventionStudentsProvider),
+              ),
+            ),
+        data: (List<TeacherInterventionStudent> students) {
+          if (students.isEmpty) {
+            return const TeacherStatePanel(
+              child: AppEmptyState(
+                icon: Icons.verified_outlined,
+                title: 'No students need intervention',
+                description: 'All students are currently on track.',
+              ),
             );
-          },
-        ),
+          }
+
+          final Map<GradeLevel, List<TeacherInterventionStudent>> byGrade =
+              _groupByGrade(students);
+          final List<GradeLevel> grades =
+              byGrade.keys.toList()..sort(
+                (GradeLevel a, GradeLevel b) => a.index.compareTo(b.index),
+              );
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              TeacherListSummary(
+                icon: Icons.support_outlined,
+                title:
+                    '${students.length} student${students.length == 1 ? '' : 's'} may need support',
+                description:
+                    'Grouped by grade so you can focus on one class at a time.',
+                badge: const AppBadge(
+                  label: 'Review suggested',
+                  variant: AppBadgeVariant.warning,
+                  icon: Icons.flag_outlined,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              TeacherResponsiveGrid(
+                children: <Widget>[
+                  for (final GradeLevel grade in grades)
+                    _InterventionGroupCard(
+                      title: grade.label,
+                      count: byGrade[grade]!.length,
+                      icon: Icons.school_outlined,
+                      onTap:
+                          () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder:
+                                  (_) => TeacherInterventionSectionsScreen(
+                                    gradeLevel: grade,
+                                    students: byGrade[grade]!,
+                                  ),
+                            ),
+                          ),
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
-/// Level 2 — sections within one grade level. Takes the already-filtered
-/// student list for [gradeLevel] straight from level 1; no separate fetch.
+/// Section groups within one grade level.
 class TeacherInterventionSectionsScreen extends StatelessWidget {
   const TeacherInterventionSectionsScreen({
     super.key,
@@ -123,49 +120,65 @@ class TeacherInterventionSectionsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final Map<String, List<TeacherInterventionStudent>> bySection =
         <String, List<TeacherInterventionStudent>>{};
-    for (final TeacherInterventionStudent s in students) {
-      (bySection[s.sectionName] ??= <TeacherInterventionStudent>[]).add(s);
+    for (final TeacherInterventionStudent student in students) {
+      (bySection[student.sectionName] ??= <TeacherInterventionStudent>[]).add(
+        student,
+      );
     }
     final List<String> sectionNames = bySection.keys.toList()..sort();
 
-    return Scaffold(
-      appBar: AppBar(title: Text('${gradeLevel.label} — Sections')),
-      body: AppPageContainer(
-        scrollable: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (final String sectionName in sectionNames)
-              AppCard(
-                margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                size: AppComponentSize.small,
-                header: Text(sectionName),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => TeacherInterventionStudentNamesScreen(
-                      sectionName: sectionName,
-                      students: bySection[sectionName]!,
-                    ),
+    return TeacherDrilldownPage(
+      title: gradeLevel.label,
+      subtitle: 'Choose a section to review students needing support',
+      child:
+          students.isEmpty
+              ? const TeacherStatePanel(
+                child: AppEmptyState(
+                  icon: Icons.verified_outlined,
+                  title: 'No students need intervention',
+                  description:
+                      'All students in this grade are currently on track.',
+                ),
+              )
+              : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  TeacherListSummary(
+                    icon: Icons.school_outlined,
+                    title:
+                        '${students.length} student${students.length == 1 ? '' : 's'} across ${sectionNames.length} section${sectionNames.length == 1 ? '' : 's'}',
+                    description:
+                        'Select a section to see the students and available support indicators.',
                   ),
-                ),
-                child: Text(
-                  '${bySection[sectionName]!.length} student'
-                  '${bySection[sectionName]!.length == 1 ? '' : 's'} flagged',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                  const SizedBox(height: AppSpacing.lg),
+                  TeacherResponsiveGrid(
+                    children: <Widget>[
+                      for (final String sectionName in sectionNames)
+                        _InterventionGroupCard(
+                          title: _sectionLabel(sectionName),
+                          count: bySection[sectionName]!.length,
+                          icon: Icons.groups_2_outlined,
+                          onTap:
+                              () => Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder:
+                                      (_) =>
+                                          TeacherInterventionStudentNamesScreen(
+                                            sectionName: sectionName,
+                                            students: bySection[sectionName]!,
+                                          ),
+                                ),
+                              ),
+                        ),
+                    ],
+                  ),
+                ],
               ),
-          ],
-        ),
-      ),
     );
   }
 }
 
-/// Level 3 — the actual flagged students in one section. This is where
-/// names finally appear; same per-student card shape
-/// [TeacherDashboardRosterScreen] uses (name, average score,
-/// missed/unfinished badge).
+/// Actual students requiring support in a selected section.
 class TeacherInterventionStudentNamesScreen extends StatelessWidget {
   const TeacherInterventionStudentNamesScreen({
     super.key,
@@ -178,32 +191,292 @@ class TeacherInterventionStudentNamesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(sectionName)),
-      body: AppPageContainer(
-        scrollable: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (final TeacherInterventionStudent s in students)
-              AppCard(
-                margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-                size: AppComponentSize.small,
-                header: Text(s.fullName),
-                trailing: s.missedOrUnfinishedCount >= 2
-                    ? AppBadge(
-                        label: '${s.missedOrUnfinishedCount} missed/unfinished',
-                        variant: AppBadgeVariant.warning,
-                      )
-                    : null,
-                child: Text(
-                  formatPercent(s.averageQuizScorePercent),
-                  style: Theme.of(context).textTheme.titleMedium,
+    final String gradeLabel =
+        students.isEmpty ? 'Selected grade' : students.first.gradeLevel.label;
+
+    return TeacherDrilldownPage(
+      title: _sectionLabel(sectionName),
+      subtitle:
+          '$gradeLabel • ${students.length} student${students.length == 1 ? '' : 's'} may need support',
+      child:
+          students.isEmpty
+              ? const TeacherStatePanel(
+                child: AppEmptyState(
+                  icon: Icons.verified_outlined,
+                  title: 'No students need intervention',
+                  description:
+                      'All students in this section are currently on track.',
                 ),
+              )
+              : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  TeacherListSummary(
+                    icon: Icons.person_search_outlined,
+                    title:
+                        '${students.length} student${students.length == 1 ? '' : 's'} need${students.length == 1 ? 's' : ''} attention',
+                    description:
+                        'Review the available indicators below and plan the next support step.',
+                    badge: const AppBadge(
+                      label: 'Needs attention',
+                      variant: AppBadgeVariant.warning,
+                      icon: Icons.flag_outlined,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  for (
+                    int index = 0;
+                    index < students.length;
+                    index++
+                  ) ...<Widget>[
+                    _InterventionStudentCard(student: students[index]),
+                    if (index != students.length - 1)
+                      const SizedBox(height: AppSpacing.md),
+                  ],
+                ],
               ),
-          ],
-        ),
+    );
+  }
+}
+
+class _InterventionGroupCard extends StatelessWidget {
+  const _InterventionGroupCard({
+    required this.title,
+    required this.count,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String title;
+  final int count;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return TeacherDrilldownCard(
+      onTap: onTap,
+      semanticLabel:
+          '$title, $count student${count == 1 ? '' : 's'} need attention',
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 48,
+            height: 48,
+            decoration: const BoxDecoration(
+              color: AppColors.amberSoft,
+              borderRadius: AppRadius.mediumAll,
+            ),
+            child: Icon(icon, color: AppColors.amber, size: 23),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.lexend(
+                    size: 17,
+                    weight: FontWeight.w700,
+                    color: AppColors.navy,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '$count student${count == 1 ? '' : 's'} '
+                  '${count == 1 ? 'needs' : 'need'} attention',
+                  style: AppTextStyles.inter(
+                    size: 12,
+                    color: AppColors.textSoft,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.textSoft),
+        ],
       ),
     );
   }
+}
+
+class _InterventionStudentCard extends StatelessWidget {
+  const _InterventionStudentCard({required this.student});
+
+  final TeacherInterventionStudent student;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> reasons = <String>[
+      if (student.averageQuizScorePercent case final num average
+          when average < 70)
+        'Average score is below 70%',
+      if (student.missedOrUnfinishedCount >= 2)
+        '${student.missedOrUnfinishedCount} missed or unfinished quizzes',
+    ];
+
+    return TeacherDrilldownCard(
+      semanticLabel: '${student.fullName}, needs attention',
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final Widget identity = Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              AppAvatar(
+                initials: _initials(student.fullName),
+                semanticLabel: '${student.fullName} avatar',
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      student.fullName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.lexend(
+                        size: 16,
+                        weight: FontWeight.w700,
+                        color: AppColors.navy,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      '${student.gradeLevel.label} • ${_sectionLabel(student.sectionName)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.inter(
+                        size: 12,
+                        color: AppColors.textSoft,
+                      ),
+                    ),
+                    if (reasons.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        'Needs support in:',
+                        style: AppTextStyles.inter(
+                          size: 11,
+                          weight: FontWeight.w600,
+                          color: AppColors.textSoft,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      for (final String reason in reasons.take(2))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              const Padding(
+                                padding: EdgeInsets.only(top: 5),
+                                child: Icon(
+                                  Icons.circle,
+                                  size: 5,
+                                  color: AppColors.amber,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  reason,
+                                  style: AppTextStyles.inter(
+                                    size: 12,
+                                    color: AppColors.navy,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+          final Widget status = Column(
+            crossAxisAlignment:
+                constraints.maxWidth < 680
+                    ? CrossAxisAlignment.start
+                    : CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const AppBadge(
+                label: 'Needs attention',
+                variant: AppBadgeVariant.warning,
+                icon: Icons.flag_outlined,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                student.averageQuizScorePercent == null
+                    ? 'No completed assessments'
+                    : 'Average ${formatPercent(student.averageQuizScorePercent)}',
+                style: AppTextStyles.inter(
+                  size: 12,
+                  weight: FontWeight.w600,
+                  color: AppColors.textSoft,
+                ),
+              ),
+            ],
+          );
+
+          if (constraints.maxWidth < 680) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                identity,
+                const SizedBox(height: AppSpacing.md),
+                status,
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(child: identity),
+              const SizedBox(width: AppSpacing.lg),
+              status,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+Map<GradeLevel, List<TeacherInterventionStudent>> _groupByGrade(
+  List<TeacherInterventionStudent> students,
+) {
+  final Map<GradeLevel, List<TeacherInterventionStudent>> grouped =
+      <GradeLevel, List<TeacherInterventionStudent>>{};
+  for (final TeacherInterventionStudent student in students) {
+    (grouped[student.gradeLevel] ??= <TeacherInterventionStudent>[]).add(
+      student,
+    );
+  }
+  return grouped;
+}
+
+String _sectionLabel(String name) {
+  final String trimmed = name.trim();
+  return trimmed.toLowerCase().startsWith('section ')
+      ? trimmed
+      : 'Section $trimmed';
+}
+
+String _initials(String name) {
+  final List<String> parts =
+      name
+          .trim()
+          .split(RegExp(r'\s+'))
+          .where((String part) => part.isNotEmpty)
+          .toList();
+  if (parts.isEmpty) return '?';
+  if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+  return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
 }

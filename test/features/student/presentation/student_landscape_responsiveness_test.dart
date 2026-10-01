@@ -265,8 +265,14 @@ void main() {
             ),
           ],
         );
+        final Finder reviewButton = find.byKey(
+          const ValueKey<String>('review_answers_button'),
+        );
+        await tester.ensureVisible(reviewButton);
+        await tester.tap(reviewButton);
+        await tester.pumpAndSettle();
         await _scrollTo(tester, find.text('Question 6'));
-        _expectNoLayoutException(tester, 'Quiz results at $size');
+        _expectNoLayoutException(tester, 'Quiz review at $size');
 
         await _pumpAt(
           tester,

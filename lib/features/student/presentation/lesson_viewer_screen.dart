@@ -17,9 +17,20 @@ import '../../../core/repositories/lessons_repository.dart';
 import '../../../core/repositories/quizzes_repository.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../core/widgets/lesson/lesson_content_block_view.dart';
+import '../data/student_lessons_providers.dart';
 import '../data/student_statistics_providers.dart';
 import 'quiz_taking_screen.dart';
 import 'worked_example_panel.dart';
+import 'comparing_numbers_lesson_screen.dart';
+import 'comparing_numbers_lesson_state.dart';
+import 'add_subtract_lesson_content.dart';
+import 'add_subtract_lesson_screen.dart';
+import 'place_value_lesson_content.dart';
+import 'place_value_lesson_screen.dart';
+import 'mdas_lesson_content.dart';
+import 'mdas_lesson_screen.dart';
+import 'fractions_lesson_content.dart';
+import 'fractions_lesson_screen.dart';
 
 abstract final class _LessonViewerPalette {
   static const Color pageBackground = Color(0xFFF3F7FC);
@@ -185,6 +196,13 @@ class _LessonViewerScreenState extends ConsumerState<LessonViewerScreen> {
   }
 
   void _markCompletedIfOnFinalPage(int index, int pageCount) {
+    if (isComparingNumbersLesson(widget.lesson) ||
+        isAddSubtractLesson(widget.lesson) ||
+        isPlaceValueLesson(widget.lesson) ||
+        isMdasLesson(widget.lesson) ||
+        isTypesOfFractionsLesson(widget.lesson)) {
+      return;
+    }
     if (_hasMarkedCompleted) return;
     if (pageCount == 0 || index != pageCount - 1) return;
     _hasMarkedCompleted = true;
@@ -198,7 +216,9 @@ class _LessonViewerScreenState extends ConsumerState<LessonViewerScreen> {
     repo
         .markCompleted(studentId: session.studentId, lessonId: widget.lesson.id)
         .then((_) {
-          if (mounted) ref.invalidate(studentStatisticsProvider);
+          if (!mounted) return;
+          ref.invalidate(studentCompletedLessonIdsProvider);
+          ref.invalidate(studentStatisticsProvider);
         });
   }
 
@@ -220,6 +240,56 @@ class _LessonViewerScreenState extends ConsumerState<LessonViewerScreen> {
     if (loadedPages != null && loadedPages.isNotEmpty) {
       _markInProgressOnce();
       _markCompletedIfOnFinalPage(_currentIndex, loadedPages.length);
+    }
+
+    if (isComparingNumbersLesson(widget.lesson) ||
+        isAddSubtractLesson(widget.lesson) ||
+        isPlaceValueLesson(widget.lesson) ||
+        isMdasLesson(widget.lesson) ||
+        isTypesOfFractionsLesson(widget.lesson)) {
+      return Scaffold(
+        backgroundColor: _LessonViewerPalette.pageBackground,
+        body: pagesAsync.when(
+          loading:
+              () => const _LessonStateSurface(
+                child: AppLoadingIndicator(
+                  size: AppComponentSize.large,
+                  message: 'Preparing your lesson...',
+                ),
+              ),
+          error:
+              (Object error, StackTrace _) => _LessonStateSurface(
+                child: AppErrorState(
+                  message:
+                      error is AppFailure
+                          ? error.message
+                          : 'Could not load this lesson.',
+                  onRetry:
+                      () =>
+                          ref.invalidate(lessonPagesProvider(widget.lesson.id)),
+                ),
+              ),
+          data:
+              (List<LessonPage> pages) =>
+                  pages.isEmpty
+                      ? const _LessonStateSurface(
+                        child: AppEmptyState(
+                          icon: Icons.menu_book_outlined,
+                          title: "This lesson doesn't have any content yet",
+                          description: 'Check back later.',
+                        ),
+                      )
+                      : isAddSubtractLesson(widget.lesson)
+                      ? AddSubtractLessonScreen(lesson: widget.lesson)
+                      : isPlaceValueLesson(widget.lesson)
+                      ? PlaceValueLessonScreen(lesson: widget.lesson)
+                      : isMdasLesson(widget.lesson)
+                      ? MdasLessonScreen(lesson: widget.lesson)
+                      : isTypesOfFractionsLesson(widget.lesson)
+                      ? FractionsLessonScreen(lesson: widget.lesson)
+                      : ComparingNumbersLessonScreen(lesson: widget.lesson),
+        ),
+      );
     }
 
     return Scaffold(
@@ -299,7 +369,7 @@ class _LessonViewerScreenState extends ConsumerState<LessonViewerScreen> {
                                 );
                               },
                               itemBuilder: (BuildContext context, int index) {
-                                return _LessonPageSlide(
+                                return LessonPageView(
                                   page: pages[index],
                                   pageIndex: index,
                                   pageCount: pages.length,
@@ -539,8 +609,15 @@ class _LessonStateSurface extends StatelessWidget {
   }
 }
 
-class _LessonPageSlide extends StatelessWidget {
-  const _LessonPageSlide({
+/// Shared, read-only renderer for one ordered lesson page.
+///
+/// Teacher presentation mode reuses this exact widget so built-in pages,
+/// composer blocks, images, math text, and worked examples remain visually
+/// aligned with the Student viewer. Student-only progress and quiz behavior
+/// stays in [LessonViewerScreen].
+class LessonPageView extends StatelessWidget {
+  const LessonPageView({
+    super.key,
     required this.page,
     required this.pageIndex,
     required this.pageCount,
