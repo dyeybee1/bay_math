@@ -27,3 +27,12 @@ final FutureProvider<Set<String>> studentCompletedLessonIdsProvider =
       if (progressRepository == null) throw const SessionExpiredFailure();
       return progressRepository.fetchCompletedLessonIds();
     });
+
+/// Full persisted lesson statuses for the catalog badges. Completion-only
+/// consumers keep their existing provider and count semantics.
+final FutureProvider<Map<String, String>> studentLessonStatusesProvider =
+    FutureProvider<Map<String, String>>((Ref ref) {
+      final progressRepository = ref.watch(lessonProgressRepositoryProvider);
+      if (progressRepository == null) throw const SessionExpiredFailure();
+      return progressRepository.fetchLessonStatuses();
+    });

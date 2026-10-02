@@ -13,7 +13,15 @@ import 'package:instructional_math_app/core/providers/student_session_provider.d
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('native app variant routing', () {
+  group('app variant routing', () {
+    test(
+      'default Web build opens Student while native desktop stays Staff',
+      () {
+        expect(defaultAppVariant(isWeb: true), AppVariant.student);
+        expect(defaultAppVariant(isWeb: false), AppVariant.staff);
+      },
+    );
+
     test('Student router starts at Student login', () {
       final ProviderContainer container = ProviderContainer(
         overrides: [
@@ -56,6 +64,10 @@ void main() {
         AppRoutes.studentLogin,
       );
       expect(studentRedirectForSession(null, AppRoutes.studentLogin), isNull);
+      expect(
+        studentRedirectForSession(null, AppRoutes.login),
+        AppRoutes.studentLogin,
+      );
     });
 
     test('Staff guard sends no restored session to unified login', () {

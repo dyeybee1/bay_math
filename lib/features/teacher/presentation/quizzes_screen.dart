@@ -122,26 +122,17 @@ class _QuizzesScreenState extends ConsumerState<QuizzesScreen> {
       message:
           'Delete this quiz permanently? Student attempts and results for this quiz will also be deleted. This action cannot be undone.',
       actions: <Widget>[
-        Flexible(
-          child: Wrap(
-            alignment: WrapAlignment.end,
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: <Widget>[
-              AppButton(
-                label: 'Cancel',
-                variant: AppButtonVariant.text,
-                size: AppComponentSize.small,
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
-              AppButton(
-                label: 'Delete permanently',
-                variant: AppButtonVariant.danger,
-                size: AppComponentSize.small,
-                onPressed: () => Navigator.of(context).pop(true),
-              ),
-            ],
-          ),
+        AppButton(
+          label: 'Cancel',
+          variant: AppButtonVariant.text,
+          size: AppComponentSize.small,
+          onPressed: () => Navigator.of(context).pop(false),
+        ),
+        AppButton(
+          label: 'Delete permanently',
+          variant: AppButtonVariant.danger,
+          size: AppComponentSize.small,
+          onPressed: () => Navigator.of(context).pop(true),
         ),
       ],
     );

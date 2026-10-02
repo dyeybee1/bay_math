@@ -105,6 +105,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final Finder back = find.byTooltip('Back to lessons');
+    expect(back, findsOneWidget);
+    expect(tester.getSize(back).width, greaterThanOrEqualTo(48));
+    expect(tester.getSize(back).height, greaterThanOrEqualTo(48));
   }
 
   Future<void> capture(WidgetTester tester, String name) async {
@@ -287,6 +291,61 @@ void main() {
     expect(find.text('24 + 6'), findsWidgets);
   });
 
+  testWidgets('division group follows the pointer and leaves controls usable', (
+    WidgetTester tester,
+  ) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1024, 600);
+    final MdasLessonState state = MdasLessonState()..phase = 1;
+    await pumpLesson(tester, state: state);
+
+    final Finder source = find.byKey(
+      cardKey(const MdasCard(MdasCardKind.group, id: 0)),
+    );
+    final Finder destination = find.byKey(
+      targetKey(const MdasTarget(MdasTargetKind.newGroup)),
+    );
+    await tester.ensureVisible(source);
+    final TestGesture drag = await tester.startGesture(
+      tester.getCenter(source),
+      kind: ui.PointerDeviceKind.mouse,
+    );
+    await drag.moveBy(const Offset(40, 12));
+    await tester.pump();
+    final Finder feedback = find.byKey(
+      ValueKey<String>(
+        'mdas_drag_feedback_${const MdasCard(MdasCardKind.group, id: 0).identity}',
+      ),
+    );
+    expect(feedback, findsOneWidget);
+    expect(tester.getSize(feedback).width, greaterThan(0));
+    final Offset firstFeedbackPosition = tester.getTopLeft(feedback);
+    await drag.moveBy(const Offset(35, 12));
+    await tester.pump();
+    expect(
+      tester.getTopLeft(feedback).dx,
+      greaterThan(firstFeedbackPosition.dx),
+    );
+    expect(tester.takeException(), isNull);
+    await drag.moveTo(tester.getCenter(destination));
+    await tester.pump();
+    await drag.up();
+    await tester.pumpAndSettle();
+    expect(state.current.groupsMade, 1);
+    await tester.tap(
+      find.byKey(cardKey(const MdasCard(MdasCardKind.group, id: 1))),
+    );
+    await tester.tap(destination);
+    await tester.pumpAndSettle();
+    expect(state.current.groupsMade, 2);
+    await tester.tap(find.text('← Previous'));
+    await tester.pumpAndSettle();
+    expect(state.phase, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('completed recap retries progress save and opens Quiz 4', (
     WidgetTester tester,
   ) async {
@@ -345,6 +404,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.calls, 2);
     expect(find.text('Lesson finished!'), findsOneWidget);
+    expect(find.byTooltip('Back to lessons'), findsOneWidget);
     await capture(tester, 'completed_recap_1024x600');
     await tester.tap(find.text('Take Quiz · Optional'));
     await tester.pumpAndSettle();

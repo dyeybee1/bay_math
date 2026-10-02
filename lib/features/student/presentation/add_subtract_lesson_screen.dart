@@ -15,6 +15,7 @@ import '../data/student_statistics_providers.dart';
 import 'add_subtract_lesson_content.dart';
 import 'add_subtract_lesson_math.dart';
 import 'add_subtract_lesson_state.dart';
+import 'lesson_back_button.dart';
 import 'lesson_viewer_screen.dart' show linkedQuizProvider;
 import 'quiz_taking_screen.dart';
 
@@ -186,12 +187,7 @@ class _AddSubtractLessonScreenState
     padding: const EdgeInsets.symmetric(horizontal: 20),
     child: Row(
       children: <Widget>[
-        IconButton(
-          tooltip: 'Back to lessons',
-          onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.arrow_back_rounded),
-          style: IconButton.styleFrom(minimumSize: const Size(52, 52)),
-        ),
+        const LessonBackButton(),
         const SizedBox(width: 8),
         Container(
           width: 38,

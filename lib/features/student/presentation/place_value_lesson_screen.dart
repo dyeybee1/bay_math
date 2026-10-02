@@ -12,6 +12,7 @@ import '../../../core/repositories/lesson_progress_repository.dart';
 import '../data/student_lessons_providers.dart';
 import '../data/student_statistics_providers.dart';
 import 'lesson_viewer_screen.dart' show linkedQuizProvider;
+import 'lesson_back_button.dart';
 import 'place_value_lesson_content.dart';
 import 'place_value_lesson_state.dart';
 import 'quiz_taking_screen.dart';
@@ -96,27 +97,42 @@ class _PlaceValueLessonScreenState
   Widget build(BuildContext context) {
     final Size size = MediaQuery.sizeOf(context);
     if (size.height > size.width) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
+      return ColoredBox(
+        color: const Color(0xFFF3F7FC),
+        child: SafeArea(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(
-                Icons.screen_rotation_rounded,
-                size: 76,
-                color: AppColors.primary,
-              ),
-              SizedBox(height: 20),
-              Text(
-                'Turn your tablet sideways',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 25, fontWeight: FontWeight.w700),
-              ),
-              SizedBox(height: 10),
-              Text(
-                'This lesson needs room to move and match cards.',
-                textAlign: TextAlign.center,
+              _header(true),
+              const Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          Icons.screen_rotation_rounded,
+                          size: 76,
+                          color: AppColors.primary,
+                        ),
+                        SizedBox(height: 20),
+                        Text(
+                          'Turn your tablet sideways',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 25,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(height: 10),
+                        Text(
+                          'This lesson needs room to move and match cards.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -126,47 +142,57 @@ class _PlaceValueLessonScreenState
     final bool short = size.height < 690;
     return ColoredBox(
       color: const Color(0xFFF3F7FC),
-      child: Column(
-        children: <Widget>[
-          _header(short),
-          _phaseBar(short),
-          Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(short ? 12 : 18),
-              child: Row(
-                children: <Widget>[
-                  Expanded(flex: 17, child: _board(short)),
-                  SizedBox(width: short ? 12 : 18),
-                  Expanded(flex: 10, child: _guide(short)),
-                ],
+      child: SafeArea(
+        child: Column(
+          children: <Widget>[
+            _header(short),
+            _phaseBar(short),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.all(short ? 12 : 18),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(flex: 17, child: _board(short)),
+                    SizedBox(width: short ? 12 : 18),
+                    Expanded(flex: 10, child: _guide(short)),
+                  ],
+                ),
               ),
             ),
-          ),
-          _footer(short),
-        ],
+            _footer(short),
+          ],
+        ),
       ),
     );
   }
 
   Widget _header(bool short) => Container(
     height: short ? 62 : 70,
-    padding: EdgeInsets.symmetric(horizontal: short ? 18 : 26),
+    padding: const EdgeInsets.symmetric(horizontal: 20),
     color: Colors.white,
     child: Row(
       children: <Widget>[
-        const Icon(Icons.calculate_rounded, size: 31, color: AppColors.primary),
-        const SizedBox(width: 10),
-        const Text(
-          'BayMath',
-          style: TextStyle(
-            fontSize: 19,
-            fontWeight: FontWeight.w800,
+        const LessonBackButton(),
+        const SizedBox(width: 8),
+        if (MediaQuery.sizeOf(context).width >= 600) ...<Widget>[
+          const Icon(
+            Icons.calculate_rounded,
+            size: 31,
             color: AppColors.primary,
           ),
-        ),
-        const SizedBox(width: 16),
-        Container(width: 1, height: 32, color: const Color(0xFFDCE5EF)),
-        const SizedBox(width: 16),
+          const SizedBox(width: 10),
+          const Text(
+            'BayMath',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Container(width: 1, height: 32, color: const Color(0xFFDCE5EF)),
+          const SizedBox(width: 16),
+        ],
         const Expanded(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,

@@ -16,6 +16,7 @@ import 'quiz_taking_screen.dart';
 import 'comparing_numbers_lesson_content.dart';
 import 'comparing_numbers_lesson_math.dart';
 import 'comparing_numbers_lesson_state.dart';
+import 'lesson_back_button.dart';
 
 class ComparingNumbersLessonScreen extends ConsumerStatefulWidget {
   const ComparingNumbersLessonScreen({super.key, required this.lesson});
@@ -151,12 +152,7 @@ class _ComparingNumbersLessonScreenState
     padding: const EdgeInsets.symmetric(horizontal: 20),
     child: Row(
       children: <Widget>[
-        IconButton(
-          tooltip: 'Back to lessons',
-          onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.arrow_back_rounded),
-          style: IconButton.styleFrom(minimumSize: const Size(52, 52)),
-        ),
+        const LessonBackButton(),
         const SizedBox(width: 8),
         Container(
           width: 38,

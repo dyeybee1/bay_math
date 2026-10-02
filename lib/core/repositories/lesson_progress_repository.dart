@@ -41,6 +41,22 @@ class LessonProgressRepository {
     }
   }
 
+  /// Persisted status for each of the signed-in student's lessons. RLS limits
+  /// this read to their own rows; a lesson absent from the map has not started.
+  Future<Map<String, String>> fetchLessonStatuses() async {
+    try {
+      final List<Map<String, dynamic>> rows = await _client
+          .from('lesson_progress')
+          .select('lesson_id, status');
+      return <String, String>{
+        for (final Map<String, dynamic> row in rows)
+          row['lesson_id'] as String: row['status'] as String,
+      };
+    } catch (error) {
+      throw mapExceptionToFailure(error);
+    }
+  }
+
   /// Called once on first entering guided mode for a lesson. If the
   /// student already has a `lesson_progress` row for this lesson — at
   /// ANY status, including already `completed` — this is a no-op:

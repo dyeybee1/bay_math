@@ -106,6 +106,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final Finder back = find.byTooltip('Back to lessons');
+    expect(back, findsOneWidget);
+    expect(tester.getSize(back).width, greaterThanOrEqualTo(48));
+    expect(tester.getSize(back).height, greaterThanOrEqualTo(48));
   }
 
   Future<void> capture(WidgetTester tester, String name) async {
@@ -358,6 +362,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(repository.calls, 2);
     expect(find.text('Lesson finished!'), findsOneWidget);
+    expect(find.byTooltip('Back to lessons'), findsOneWidget);
     await capture(tester, 'completed_recap_1024x600');
     await tester.tap(find.text('Take Quiz 5 · Optional'));
     await tester.pumpAndSettle();

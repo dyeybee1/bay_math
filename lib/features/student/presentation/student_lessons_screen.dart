@@ -1,59 +1,73 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
 
 export '../data/student_lessons_providers.dart'
     show studentCompletedLessonIdsProvider, studentVisibleLessonsProvider;
 
 import '../../../app/constants/app_dimensions.dart';
-import '../../../app/constants/app_spacing.dart';
-import '../../../app/theme/app_colors.dart';
-import '../../../app/theme/app_semantic_colors.dart';
+import '../../../app/router/app_routes.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/models/lesson.dart';
 import '../../../core/widgets/widgets.dart';
 import '../data/student_lessons_providers.dart';
 import 'lesson_viewer_screen.dart';
 import 'student_curriculum_order.dart';
+import 'student_lesson_illustration.dart';
 
-abstract final class _LessonsPalette {
-  static const Color pageBackground = Color(0xFFF3F7FC);
-  static const Color learningGreen = Color(0xFF39735B);
-  static const Color learningGreenContainer = Color(0xFFE1F0E8);
-}
-
-/// Landscape-first lesson catalog for the Student tablet experience.
-///
-/// Lesson fetching, refresh, retry, and viewer navigation remain unchanged.
-/// The Student catalog applies the canonical curriculum order before pairing
-/// lessons into responsive rows.
-class StudentLessonsScreen extends ConsumerWidget {
+/// The student catalog keeps its existing lesson source, order, and viewer.
+class StudentLessonsScreen extends ConsumerStatefulWidget {
   const StudentLessonsScreen({super.key});
 
-  static const double _maxContentWidth = AppDimensions.maxContentWidth;
+  @override
+  ConsumerState<StudentLessonsScreen> createState() =>
+      _StudentLessonsScreenState();
+}
+
+class _StudentLessonsScreenState extends ConsumerState<StudentLessonsScreen> {
+  bool _openingLesson = false;
+
+  Future<void> _openLesson(Lesson lesson) async {
+    if (_openingLesson) return;
+    _openingLesson = true;
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => LessonViewerScreen(lesson: lesson),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        ref.invalidate(studentLessonStatusesProvider);
+        _openingLesson = false;
+      }
+    }
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final AsyncValue<List<Lesson>> lessonsAsync = ref.watch(
       studentVisibleLessonsProvider,
     );
-    final AsyncValue<Set<String>> completedLessonIdsAsync = ref.watch(
-      studentCompletedLessonIdsProvider,
+    final List<Lesson>? lessons = lessonsAsync.asData?.value;
+    final List<Lesson>? ordered =
+        lessons == null ? null : orderStudentLessons(lessons);
+    final AsyncValue<Map<String, String>> statusesAsync = ref.watch(
+      studentLessonStatusesProvider,
     );
-    final int? lessonCount =
-        lessonsAsync.asData == null
-            ? null
-            : orderStudentLessons(lessonsAsync.asData!.value).length;
 
     return Scaffold(
-      backgroundColor: _LessonsPalette.pageBackground,
+      backgroundColor: const Color(0xFFF1F6FC),
       body: Stack(
         children: <Widget>[
           const Positioned.fill(child: _LessonsBackdrop()),
           SafeArea(
             child: Column(
               children: <Widget>[
-                _LessonsHeader(lessonCount: lessonCount),
+                _LessonsHeader(lessonCount: ordered?.length),
                 Expanded(
                   child: lessonsAsync.when(
                     loading:
@@ -76,8 +90,8 @@ class StudentLessonsScreen extends ConsumerWidget {
                                 ),
                           ),
                         ),
-                    data: (List<Lesson> lessons) {
-                      if (lessons.isEmpty) {
+                    data: (List<Lesson> loaded) {
+                      if (loaded.isEmpty) {
                         return const _LessonStateSurface(
                           child: AppEmptyState(
                             icon: Icons.auto_stories_outlined,
@@ -87,58 +101,47 @@ class StudentLessonsScreen extends ConsumerWidget {
                           ),
                         );
                       }
-
-                      final List<Lesson> orderedLessons = orderStudentLessons(
-                        lessons,
-                      );
-
-                      return RefreshIndicator(
-                        onRefresh: () async {
-                          ref.invalidate(studentVisibleLessonsProvider);
-                          ref.invalidate(studentCompletedLessonIdsProvider);
-                        },
-                        child: _LessonCatalog(
-                          lessons: orderedLessons,
-                          completedLessonIds:
-                              completedLessonIdsAsync.value ?? const <String>{},
-                          onOpenLesson: (Lesson lesson) {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder:
-                                    (_) => LessonViewerScreen(lesson: lesson),
+                      return statusesAsync.when(
+                        loading:
+                            () => const _LessonStateSurface(
+                              child: AppLoadingIndicator(
+                                message: 'Checking lesson progress…',
                               ),
-                            );
-                          },
-                        ),
+                            ),
+                        error:
+                            (Object error, StackTrace _) => _LessonStateSurface(
+                              child: AppErrorState(
+                                icon: Icons.cloud_off_rounded,
+                                message:
+                                    error is AppFailure
+                                        ? error.message
+                                        : 'Could not load lesson progress.',
+                                onRetry:
+                                    () => ref.invalidate(
+                                      studentLessonStatusesProvider,
+                                    ),
+                              ),
+                            ),
+                        data:
+                            (Map<String, String> statuses) => RefreshIndicator(
+                              onRefresh: () async {
+                                ref.invalidate(studentVisibleLessonsProvider);
+                                ref.invalidate(studentLessonStatusesProvider);
+                                ref.invalidate(
+                                  studentCompletedLessonIdsProvider,
+                                );
+                              },
+                              child: _LessonCatalog(
+                                lessons: ordered!,
+                                statuses: statuses,
+                                onOpenLesson: _openLesson,
+                              ),
+                            ),
                       );
                     },
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LessonsBackdrop extends StatelessWidget {
-  const _LessonsBackdrop();
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          const ColoredBox(color: _LessonsPalette.pageBackground),
-          Opacity(
-            opacity: 0.4,
-            child: Image.asset(
-              'assets/images/stat_background.png',
-              fit: BoxFit.cover,
-              alignment: Alignment.topCenter,
             ),
           ),
         ],
@@ -154,132 +157,89 @@ class _LessonsHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool short = MediaQuery.sizeOf(context).height < 680;
     return Material(
-      color: colorScheme.surface.withValues(alpha: 0.97),
+      color: Colors.white.withValues(alpha: .91),
       child: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: colorScheme.outlineVariant)),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Color(0xFFDCE8F3))),
         ),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(
-              maxWidth: StudentLessonsScreen._maxContentWidth,
+              maxWidth: AppDimensions.maxContentWidth,
             ),
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final bool isCompactHeight =
-                    MediaQuery.sizeOf(context).height < 680;
-
-                return Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg,
-                    vertical: isCompactHeight ? 7 : 10,
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      IconButton(
-                        key: const ValueKey<String>('lessons_back_button'),
-                        tooltip: 'Back',
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        icon: const Icon(Icons.arrow_back_rounded),
-                        style: IconButton.styleFrom(
-                          foregroundColor: colorScheme.onPrimaryContainer,
-                          backgroundColor: colorScheme.primaryContainer,
-                          minimumSize: const Size.square(
-                            AppDimensions.minTouchTarget,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: short ? 8 : 11,
+              ),
+              child: Row(
+                children: <Widget>[
+                  IconButton(
+                    key: const ValueKey<String>('lessons_back_button'),
+                    tooltip: 'Back to home',
+                    onPressed: () {
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      } else {
+                        context.go(AppRoutes.studentHome);
+                      }
+                    },
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    style: IconButton.styleFrom(
+                      foregroundColor: const Color(0xFF244A7B),
+                      backgroundColor: const Color(0xFFE8F1FC),
+                      minimumSize: const Size.square(
+                        AppDimensions.minTouchTarget,
                       ),
-                      const SizedBox(width: AppSpacing.md),
-                      Container(
-                        width: isCompactHeight ? 42 : 46,
-                        height: isCompactHeight ? 42 : 46,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Text(
+                      'Lessons',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.headlineSmall?.copyWith(
+                        color: const Color(0xFF193B5D),
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -.7,
+                      ),
+                    ),
+                  ),
+                  if (lessonCount != null)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 135),
+                      child: Container(
+                        key: const ValueKey<String>('lesson_count'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
-                          color: _LessonsPalette.learningGreenContainer,
-                          borderRadius: BorderRadius.circular(14),
+                          color: const Color(0xFFEAF2FC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFD4E3F4)),
                         ),
-                        child: const Icon(
-                          Icons.auto_stories_rounded,
-                          color: _LessonsPalette.learningGreen,
-                          size: 24,
+                        child: Text(
+                          '$lessonCount ${lessonCount == 1 ? 'lesson' : 'lessons'}',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelLarge?.copyWith(
+                            color: colors.onPrimaryContainer,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              'Lessons',
-                              style: GoogleFonts.lexend(
-                                color: AppColors.textPrimary,
-                                fontSize: isCompactHeight ? 24 : 26,
-                                fontWeight: FontWeight.w700,
-                                height: 1.1,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              'Choose your next math lesson.',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                color: AppColors.textSecondary,
-                                fontSize: isCompactHeight ? 15 : 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (lessonCount != null &&
-                          constraints.maxWidth >= 720) ...<Widget>[
-                        const SizedBox(width: AppSpacing.md),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 9,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.surfaceContainerHighest
-                                .withValues(alpha: 0.7),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: colorScheme.outlineVariant,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Icon(
-                                Icons.auto_awesome_motion_rounded,
-                                size: 16,
-                                color: colorScheme.primary,
-                              ),
-                              const SizedBox(width: 7),
-                              Text(
-                                '$lessonCount ${lessonCount == 1 ? 'LESSON' : 'LESSONS'}',
-                                style: GoogleFonts.inter(
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              },
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -291,130 +251,92 @@ class _LessonsHeader extends StatelessWidget {
 class _LessonCatalog extends StatelessWidget {
   const _LessonCatalog({
     required this.lessons,
-    required this.completedLessonIds,
+    required this.statuses,
     required this.onOpenLesson,
   });
 
   final List<Lesson> lessons;
-  final Set<String> completedLessonIds;
+  final Map<String, String> statuses;
   final ValueChanged<Lesson> onOpenLesson;
 
   @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool isShort = constraints.maxHeight < 590;
-        final bool useTwoColumns = constraints.maxWidth >= 880;
-        final double horizontalPadding =
-            constraints.maxWidth >= 1500 ? AppSpacing.xl : AppSpacing.lg;
-        final double verticalPadding = isShort ? 12 : AppSpacing.md;
-        final double gap = isShort ? 12 : AppSpacing.md;
-        final int rowCount =
-            useTwoColumns ? (lessons.length + 1) ~/ 2 : lessons.length;
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      final bool short = constraints.maxHeight < 590;
+      final bool twoColumns =
+          constraints.maxWidth >= 800 &&
+          MediaQuery.orientationOf(context) == Orientation.landscape;
+      final double gap = short ? 12 : 16;
+      final double padding = constraints.maxWidth < 600 ? 16 : 24;
+      final int rowCount =
+          twoColumns ? (lessons.length + 1) ~/ 2 : lessons.length;
 
-        return ListView.builder(
-          key: const ValueKey<String>('lesson_catalog'),
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            horizontalPadding,
-            verticalPadding,
-            horizontalPadding,
-            isShort ? AppSpacing.lg : AppSpacing.xl,
-          ),
-          itemCount: rowCount,
-          itemBuilder: (BuildContext context, int rowIndex) {
-            final int lessonIndex = useTwoColumns ? rowIndex * 2 : rowIndex;
+      Widget card(int index) => _LessonCard(
+        key: ValueKey<String>('lesson_card_${lessons[index].id}'),
+        lesson: lessons[index],
+        index: index,
+        status: statuses[lessons[index].id],
+        short: short,
+        onTap: () => onOpenLesson(lessons[index]),
+      );
 
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: StudentLessonsScreen._maxContentWidth,
-                ),
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    bottom: rowIndex == rowCount - 1 ? 0 : gap,
-                  ),
-                  child:
-                      useTwoColumns
-                          ? IntrinsicHeight(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: <Widget>[
-                                Expanded(
-                                  child: _LessonCard(
-                                    key: ValueKey<String>(
-                                      'lesson_card_$lessonIndex',
-                                    ),
-                                    lesson: lessons[lessonIndex],
-                                    index: lessonIndex,
-                                    isCompleted: completedLessonIds.contains(
-                                      lessons[lessonIndex].id,
-                                    ),
-                                    compact: isShort,
-                                    onTap:
-                                        () =>
-                                            onOpenLesson(lessons[lessonIndex]),
-                                  ),
-                                ),
-                                SizedBox(width: gap),
-                                Expanded(
-                                  child:
-                                      lessonIndex + 1 < lessons.length
-                                          ? _LessonCard(
-                                            key: ValueKey<String>(
-                                              'lesson_card_${lessonIndex + 1}',
-                                            ),
-                                            lesson: lessons[lessonIndex + 1],
-                                            index: lessonIndex + 1,
-                                            isCompleted: completedLessonIds
-                                                .contains(
-                                                  lessons[lessonIndex + 1].id,
-                                                ),
-                                            compact: isShort,
-                                            onTap:
-                                                () => onOpenLesson(
-                                                  lessons[lessonIndex + 1],
-                                                ),
-                                          )
-                                          : const SizedBox.shrink(),
-                                ),
-                              ],
-                            ),
-                          )
-                          : _LessonCard(
-                            key: ValueKey<String>('lesson_card_$lessonIndex'),
-                            lesson: lessons[lessonIndex],
-                            index: lessonIndex,
-                            isCompleted: completedLessonIds.contains(
-                              lessons[lessonIndex].id,
-                            ),
-                            compact: isShort,
-                            onTap: () => onOpenLesson(lessons[lessonIndex]),
-                          ),
-                ),
+      return ListView.builder(
+        key: const ValueKey<String>('lesson_catalog'),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(padding, short ? 12 : 20, padding, 32),
+        itemCount: rowCount,
+        itemBuilder: (BuildContext context, int row) {
+          final int first = twoColumns ? row * 2 : row;
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: AppDimensions.maxContentWidth,
               ),
-            );
-          },
-        );
-      },
-    );
-  }
+              child: Padding(
+                padding: EdgeInsets.only(bottom: row == rowCount - 1 ? 0 : gap),
+                child:
+                    twoColumns
+                        ? IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              Expanded(child: card(first)),
+                              SizedBox(width: gap),
+                              Expanded(
+                                child:
+                                    first + 1 < lessons.length
+                                        ? card(first + 1)
+                                        : const SizedBox.shrink(),
+                              ),
+                            ],
+                          ),
+                        )
+                        : card(first),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
 }
+
+enum _LessonStatus { completed, inProgress, notStarted }
 
 class _LessonCard extends StatefulWidget {
   const _LessonCard({
     super.key,
     required this.lesson,
     required this.index,
-    required this.isCompleted,
-    required this.compact,
+    required this.status,
+    required this.short,
     required this.onTap,
   });
 
   final Lesson lesson;
   final int index;
-  final bool isCompleted;
-  final bool compact;
+  final String? status;
+  final bool short;
   final VoidCallback onTap;
 
   @override
@@ -422,168 +344,237 @@ class _LessonCard extends StatefulWidget {
 }
 
 class _LessonCardState extends State<_LessonCard> {
-  bool _isHovered = false;
-  bool _isFocused = false;
-  bool _isPressed = false;
+  bool _hovered = false;
+  bool _focused = false;
+  bool _pressed = false;
+  bool _entered = false;
+  Timer? _entranceTimer;
 
-  bool get _isEmphasized => _isHovered || _isFocused || _isPressed;
+  @override
+  void initState() {
+    super.initState();
+    _entered = widget.index >= 6;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _entranceTimer?.cancel();
+      _entranceTimer = null;
+      _entered = true;
+    } else if (!_entered && _entranceTimer == null) {
+      _entranceTimer = Timer(
+        Duration(milliseconds: 40 + widget.index * 45),
+        () {
+          _entranceTimer = null;
+          if (mounted) setState(() => _entered = true);
+        },
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _entranceTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final AppSemanticColors? semantic =
-        Theme.of(context).extension<AppSemanticColors>();
-    final _LessonVisual visual = _LessonVisual.forTitle(widget.lesson.title);
-    final String lessonNumber = (widget.index + 1).toString().padLeft(2, '0');
-    final Color labelColor =
-        Color.lerp(visual.color, AppColors.textPrimary, 0.22)!;
-    final Color completedColor = semantic?.success ?? colorScheme.secondary;
+    final bool reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final bool emphasized = _hovered || _focused || _pressed;
+    final StudentLessonVisual visual = StudentLessonVisual.forLesson(
+      widget.lesson,
+    );
+    final _LessonStatus status = switch (widget.status) {
+      'completed' => _LessonStatus.completed,
+      'in_progress' => _LessonStatus.inProgress,
+      _ => _LessonStatus.notStarted,
+    };
+    final String statusLabel = switch (status) {
+      _LessonStatus.completed => 'Completed',
+      _LessonStatus.inProgress => 'In progress',
+      _LessonStatus.notStarted => 'Not started',
+    };
+    final Color statusColor = switch (status) {
+      _LessonStatus.completed => const Color(0xFF277257),
+      _LessonStatus.inProgress => const Color(0xFF885823),
+      _LessonStatus.notStarted => const Color(0xFF60768E),
+    };
+    final Color statusTint = switch (status) {
+      _LessonStatus.completed => const Color(0xFFE5F5EC),
+      _LessonStatus.inProgress => const Color(0xFFFFF2DF),
+      _LessonStatus.notStarted => const Color(0xFFF0F4F8),
+    };
+    final IconData statusIcon = switch (status) {
+      _LessonStatus.completed => Icons.check_circle_rounded,
+      _LessonStatus.inProgress => Icons.timelapse_rounded,
+      _LessonStatus.notStarted => Icons.circle_outlined,
+    };
+    final Duration duration =
+        reduceMotion ? Duration.zero : const Duration(milliseconds: 190);
+    final String number = (widget.index + 1).toString().padLeft(2, '0');
 
     return Semantics(
       button: true,
-      label:
-          'Lesson $lessonNumber. ${widget.lesson.title}. '
-          '${widget.isCompleted ? 'Completed. ' : ''}${widget.lesson.body}',
-      child: AnimatedScale(
-        scale: _isPressed ? 0.992 : 1,
-        duration: const Duration(milliseconds: 120),
-        curve: Curves.easeOutCubic,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
+      label: 'Lesson $number. ${widget.lesson.title}. $statusLabel.',
+      child: AnimatedOpacity(
+        opacity: reduceMotion || _entered ? 1 : 0,
+        duration: duration,
+        child: AnimatedSlide(
+          offset:
+              reduceMotion
+                  ? Offset.zero
+                  : !_entered
+                  ? const Offset(0, .08)
+                  : _hovered || _focused
+                  ? const Offset(0, -.018)
+                  : Offset.zero,
+          duration: duration,
           curve: Curves.easeOutCubic,
-          height: widget.compact ? 142 : 148,
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color:
-                  _isEmphasized
-                      ? visual.color.withValues(alpha: 0.52)
-                      : widget.isCompleted
-                      ? completedColor.withValues(alpha: 0.58)
-                      : colorScheme.outlineVariant,
-              width: _isFocused ? 2 : 1,
-            ),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: AppColors.onPrimaryContainer.withValues(
-                  alpha: _isEmphasized ? 0.1 : 0.075,
+          child: AnimatedScale(
+            scale: _pressed && !reduceMotion ? .99 : 1,
+            duration: duration,
+            child: AnimatedContainer(
+              duration: duration,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[Colors.white, visual.tint],
                 ),
-                blurRadius: _isEmphasized ? 18 : 15,
-                offset: Offset(0, _isEmphasized ? 6 : 4),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color:
+                      emphasized
+                          ? visual.accent.withValues(alpha: .58)
+                          : visual.border,
+                  width: emphasized ? 1.5 : 1,
+                ),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: const Color(
+                      0xFF386B9F,
+                    ).withValues(alpha: emphasized ? .15 : .07),
+                    blurRadius: emphasized ? 23 : 14,
+                    offset: Offset(0, emphasized ? 8 : 5),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: widget.onTap,
-              onHover: (bool value) => setState(() => _isHovered = value),
-              onFocusChange: (bool value) => setState(() => _isFocused = value),
-              onHighlightChanged:
-                  (bool value) => setState(() => _isPressed = value),
-              focusColor: visual.containerColor.withValues(alpha: 0.35),
-              hoverColor: visual.containerColor.withValues(alpha: 0.25),
-              highlightColor: visual.containerColor.withValues(alpha: 0.18),
-              splashColor: visual.color.withValues(alpha: 0.12),
-              child: Ink(
-                color:
-                    widget.isCompleted
-                        ? (semantic?.successContainer ??
-                                colorScheme.secondaryContainer)
-                            .withValues(alpha: 0.18)
-                        : colorScheme.surface,
-                child: Stack(
-                  children: <Widget>[
-                    Positioned(
-                      left: 0,
-                      top: 18,
-                      bottom: 18,
-                      child: Container(
-                        width: 4,
-                        decoration: BoxDecoration(
-                          color: visual.color,
-                          borderRadius: const BorderRadius.horizontal(
-                            right: Radius.circular(4),
-                          ),
-                        ),
-                      ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  key: ValueKey<String>('lesson_tap_${widget.lesson.id}'),
+                  borderRadius: BorderRadius.circular(22),
+                  onTap: widget.onTap,
+                  onHover: (bool value) => setState(() => _hovered = value),
+                  onFocusChange:
+                      (bool value) => setState(() => _focused = value),
+                  onHighlightChanged:
+                      (bool value) => setState(() => _pressed = value),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: widget.short ? 164 : 180,
                     ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md,
-                        vertical: widget.compact ? 12 : 13,
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        widget.short ? 15 : 18,
+                        17,
+                        12,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Row(
                             children: <Widget>[
-                              _LessonVisualTile(
-                                key: ValueKey<String>(
-                                  'lesson_topic_visual_${widget.index}',
-                                ),
-                                visual: visual,
-                                compact: widget.compact,
-                              ),
-                              const SizedBox(width: 14),
-                              Text(
-                                'LESSON $lessonNumber',
-                                key: ValueKey<String>(
-                                  'lesson_label_${widget.index}',
-                                ),
-                                style: GoogleFonts.inter(
-                                  color: labelColor,
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.75,
-                                ),
-                              ),
-                              if (widget.isCompleted) ...<Widget>[
-                                const Spacer(),
-                                AppBadge(
-                                  key: ValueKey<String>(
-                                    'lesson_completed_badge_${widget.index}',
+                              Expanded(
+                                child: Text(
+                                  'LESSON $number',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.labelSmall?.copyWith(
+                                    color: visual.accent,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 1.1,
                                   ),
-                                  label: 'Completed',
-                                  variant: AppBadgeVariant.success,
-                                  icon: Icons.check_circle_rounded,
                                 ),
-                              ],
+                              ),
+                              Container(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 155,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: statusTint,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Icon(
+                                      statusIcon,
+                                      size: 14,
+                                      color: statusColor,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Flexible(
+                                      child: Text(
+                                        statusLabel,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.labelSmall?.copyWith(
+                                          color: statusColor,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
-                          SizedBox(
-                            height:
-                                widget.compact ? AppSpacing.xs : AppSpacing.sm,
-                          ),
-                          Align(
-                            alignment: Alignment.topCenter,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 440),
-                              child: Text(
-                                widget.lesson.title,
-                                key: ValueKey<String>(
-                                  'lesson_title_${widget.index}',
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.lexend(
-                                  color: AppColors.textPrimary,
-                                  fontSize: widget.compact ? 19 : 20,
-                                  fontWeight: FontWeight.w600,
-                                  height: widget.compact ? 1.14 : 1.16,
+                          const SizedBox(height: 5),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: Text(
+                                  widget.lesson.title,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleLarge?.copyWith(
+                                    color: visual.titleColor,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: widget.short ? 19 : 20,
+                                    height: 1.16,
+                                  ),
                                 ),
                               ),
+                              const SizedBox(width: 10),
+                              StudentLessonIllustration(
+                                visual: visual,
+                                size: widget.short ? 82 : 96,
+                                hovered: emphasized,
+                                reduceMotion: reduceMotion,
+                              ),
+                            ],
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 21,
+                              color: visual.accent,
                             ),
                           ),
-                          const Spacer(),
                         ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -594,196 +585,155 @@ class _LessonCardState extends State<_LessonCard> {
   }
 }
 
-class _LessonVisualTile extends StatelessWidget {
-  const _LessonVisualTile({
-    super.key,
-    required this.visual,
-    required this.compact,
-  });
-
-  final _LessonVisual visual;
-  final bool compact;
+class _LessonsBackdrop extends StatefulWidget {
+  const _LessonsBackdrop();
 
   @override
-  Widget build(BuildContext context) {
-    final double size = compact ? 46 : 48;
-    final double glyphExtent = compact ? 32 : 34;
-
-    return ExcludeSemantics(
-      child: SizedBox.square(
-        dimension: size,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: visual.containerColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: visual.color.withValues(alpha: 0.18)),
-          ),
-          child: Center(
-            child: SizedBox.square(
-              dimension: glyphExtent,
-              child: Center(
-                child:
-                    visual.symbol == null
-                        ? Icon(visual.icon, color: visual.color, size: 26)
-                        : FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            visual.symbol!,
-                            maxLines: 1,
-                            style: GoogleFonts.lexend(
-                              color: visual.color,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w700,
-                              height: 1,
-                            ),
-                          ),
-                        ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  State<_LessonsBackdrop> createState() => _LessonsBackdropState();
 }
 
-class _LessonVisual {
-  const _LessonVisual({
-    required this.color,
-    required this.containerColor,
-    this.icon,
-    this.symbol,
-  }) : assert(icon != null || symbol != null);
+class _LessonsBackdropState extends State<_LessonsBackdrop>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  late final AnimationController _motion = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 18),
+  );
+  bool _appActive = true;
 
-  final Color color;
-  final Color containerColor;
-  final IconData? icon;
-  final String? symbol;
-
-  static _LessonVisual forTitle(String title) {
-    final String normalizedTitle = title.toLowerCase();
-
-    if (normalizedTitle.contains('time')) {
-      return const _LessonVisual(
-        color: _LessonsPalette.learningGreen,
-        containerColor: _LessonsPalette.learningGreenContainer,
-        icon: Icons.schedule_rounded,
-      );
-    }
-    if (normalizedTitle.contains('probability')) {
-      return const _LessonVisual(
-        color: AppColors.tertiary,
-        containerColor: AppColors.tertiaryContainer,
-        icon: Icons.casino_outlined,
-      );
-    }
-    if (normalizedTitle.contains('ratio') ||
-        normalizedTitle.contains('proportion')) {
-      return const _LessonVisual(
-        color: AppColors.primary,
-        containerColor: AppColors.primaryContainer,
-        icon: Icons.balance_rounded,
-      );
-    }
-    if (normalizedTitle.contains('circle')) {
-      return const _LessonVisual(
-        color: _LessonsPalette.learningGreen,
-        containerColor: _LessonsPalette.learningGreenContainer,
-        icon: Icons.donut_large_rounded,
-      );
-    }
-    if (normalizedTitle.contains('volume') ||
-        normalizedTitle.contains('surface area') ||
-        normalizedTitle.contains('solid figure')) {
-      return const _LessonVisual(
-        color: AppColors.tertiary,
-        containerColor: AppColors.tertiaryContainer,
-        icon: Icons.view_in_ar_rounded,
-      );
-    }
-    if (normalizedTitle.contains('area') ||
-        normalizedTitle.contains('perimeter') ||
-        normalizedTitle.contains('plane figure')) {
-      return const _LessonVisual(
-        color: AppColors.tertiary,
-        containerColor: AppColors.tertiaryContainer,
-        icon: Icons.category_rounded,
-      );
-    }
-    if (normalizedTitle.contains('factor') ||
-        normalizedTitle.contains('multiple') ||
-        normalizedTitle.contains('divisibility') ||
-        normalizedTitle.contains('prime') ||
-        normalizedTitle.contains('composite number')) {
-      return const _LessonVisual(
-        color: _LessonsPalette.learningGreen,
-        containerColor: _LessonsPalette.learningGreenContainer,
-        icon: Icons.grid_view_rounded,
-      );
-    }
-    if (normalizedTitle.contains('fraction') &&
-        normalizedTitle.contains('decimal')) {
-      return const _LessonVisual(
-        color: _LessonsPalette.learningGreen,
-        containerColor: _LessonsPalette.learningGreenContainer,
-        symbol: '\u00BD \u2194 .5',
-      );
-    }
-    if (normalizedTitle.contains('fraction')) {
-      return const _LessonVisual(
-        color: _LessonsPalette.learningGreen,
-        containerColor: _LessonsPalette.learningGreenContainer,
-        symbol: '\u00BD',
-      );
-    }
-    if (normalizedTitle.contains('decimal')) {
-      return const _LessonVisual(
-        color: AppColors.tertiary,
-        containerColor: AppColors.tertiaryContainer,
-        symbol: '0.5',
-      );
-    }
-    if (normalizedTitle.contains('place value')) {
-      return const _LessonVisual(
-        color: AppColors.primary,
-        containerColor: AppColors.primaryContainer,
-        symbol: '123',
-      );
-    }
-    if (normalizedTitle.contains('compar')) {
-      return const _LessonVisual(
-        color: AppColors.primary,
-        containerColor: AppColors.primaryContainer,
-        symbol: '< >',
-      );
-    }
-    if (normalizedTitle.contains('multipli') ||
-        normalizedTitle.contains('divid') ||
-        normalizedTitle.contains('mdas') ||
-        normalizedTitle.contains('gmdas') ||
-        normalizedTitle.contains('gemdas') ||
-        normalizedTitle.contains('exponent')) {
-      return const _LessonVisual(
-        color: AppColors.tertiary,
-        containerColor: AppColors.tertiaryContainer,
-        symbol: '\u00D7 \u00F7',
-      );
-    }
-    if (normalizedTitle.contains('add') ||
-        normalizedTitle.contains('subtract')) {
-      return const _LessonVisual(
-        color: AppColors.primary,
-        containerColor: AppColors.primaryContainer,
-        symbol: '+ \u2212',
-      );
-    }
-
-    return const _LessonVisual(
-      color: AppColors.primary,
-      containerColor: AppColors.primaryContainer,
-      icon: Icons.functions_rounded,
-    );
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
   }
+
+  void _syncMotion() {
+    if (MediaQuery.disableAnimationsOf(context) || !_appActive) {
+      _motion.stop();
+      if (MediaQuery.disableAnimationsOf(context)) _motion.value = 0;
+    } else if (!_motion.isAnimating) {
+      _motion.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncMotion();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appActive = state == AppLifecycleState.resumed;
+    if (mounted) _syncMotion();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _motion.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: ExcludeSemantics(
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _motion,
+          builder:
+              (BuildContext context, Widget? child) => CustomPaint(
+                painter: _BackdropPainter(_motion.value),
+                child: const SizedBox.expand(),
+              ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _BackdropPainter extends CustomPainter {
+  const _BackdropPainter(this.phase);
+
+  final double phase;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            Color(0xFFEDF5FF),
+            Color(0xFFF4F1FF),
+            Color(0xFFEDF8F5),
+          ],
+        ).createShader(Offset.zero & size),
+    );
+    final Paint dot =
+        Paint()..color = const Color(0xFF7299C5).withValues(alpha: .095);
+    for (double x = 18; x < size.width; x += 28) {
+      for (double y = 18; y < size.height; y += 28) {
+        canvas.drawCircle(Offset(x, y), 1, dot);
+      }
+    }
+    void glow(Offset center, double radius, Color color) {
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..shader = RadialGradient(
+            colors: <Color>[
+              color.withValues(alpha: .13),
+              color.withValues(alpha: 0),
+            ],
+          ).createShader(Rect.fromCircle(center: center, radius: radius)),
+      );
+    }
+
+    glow(
+      Offset(size.width * .13 + phase * 26, size.height * .18),
+      200,
+      const Color(0xFF6EAAEC),
+    );
+    glow(
+      Offset(size.width * .83 - phase * 24, size.height * .66),
+      240,
+      const Color(0xFFAB8AE5),
+    );
+    glow(
+      Offset(size.width * .49, size.height * .90 - phase * 22),
+      180,
+      const Color(0xFF70BEA8),
+    );
+    const List<String> symbols = <String>['+', '÷', '×', '='];
+    for (int i = 0; i < symbols.length; i++) {
+      final TextPainter text = TextPainter(
+        text: TextSpan(
+          text: symbols[i],
+          style: TextStyle(
+            color: const Color(0xFF7998B9).withValues(alpha: .14),
+            fontSize: 30,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      text.paint(
+        canvas,
+        Offset(
+          size.width * (.13 + i * .23),
+          size.height * (.24 + (i % 2) * .43) +
+              math.sin(phase * math.pi + i) * 8,
+        ),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BackdropPainter oldDelegate) =>
+      oldDelegate.phase != phase;
 }
 
 class _LessonStateSurface extends StatelessWidget {
@@ -792,27 +742,10 @@ class _LessonStateSurface extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    final ColorScheme colorScheme = Theme.of(context).colorScheme;
-
-    return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 580),
-        margin: const EdgeInsets.all(AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: colorScheme.surface.withValues(alpha: 0.96),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: colorScheme.outlineVariant),
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: AppColors.onPrimaryContainer.withValues(alpha: 0.08),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: child,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Center(
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 600),
+      child: child,
+    ),
+  );
 }

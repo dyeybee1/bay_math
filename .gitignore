@@ -22,3 +22,6 @@ build/
 **/ios/Flutter/Flutter.podspec
 **/ios/Pods/
 **/web/manifest.json.bak
+
+.vercel
+.env*
