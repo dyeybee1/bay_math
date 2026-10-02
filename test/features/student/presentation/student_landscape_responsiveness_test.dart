@@ -391,7 +391,7 @@ void main() {
         await tester.pumpAndSettle();
         _expectNoLayoutException(tester, 'Endless help dialog at $size');
         await tester.tap(find.text('Ready to practice'));
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 500));
 
         await _pumpAt(
           tester,

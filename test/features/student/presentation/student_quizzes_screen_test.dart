@@ -1,10 +1,17 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:instructional_math_app/app/theme/app_theme.dart';
+import 'package:instructional_math_app/app/router/app_routes.dart';
 import 'package:instructional_math_app/core/models/content_source_type.dart';
 import 'package:instructional_math_app/core/models/quiz.dart';
 import 'package:instructional_math_app/core/models/quiz_attempt.dart';
@@ -73,7 +80,8 @@ void main() {
       expect(secondPosition.dy, closeTo(firstPosition.dy, 0.1));
       expect(secondPosition.dx, greaterThan(firstPosition.dx));
       expect(thirdPosition.dy, greaterThan(firstPosition.dy));
-      expect(find.text('QUIZ'), findsNWidgets(4));
+      expect(find.text('QUIZ 1'), findsOneWidget);
+      expect(find.text('QUIZ'), findsNWidgets(3));
       expect(find.text('PRE-TEST'), findsOneWidget);
       expect(find.text('POST-TEST'), findsOneWidget);
       expect(find.text('EXTERNAL ACTIVITY'), findsOneWidget);
@@ -81,8 +89,218 @@ void main() {
       expect(_buttonLabel(tester, 'pre-start'), 'Start');
       expect(_buttonLabel(tester, 'post-review'), 'Review');
       expect(_buttonLabel(tester, 'regular-review'), 'Review');
-      expect(_buttonLabel(tester, 'regular-resume'), 'Resume');
+      expect(_buttonLabel(tester, 'regular-resume'), 'Continue');
       expect(_buttonLabel(tester, 'superseded-start'), 'Start');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('card actions use the approved scoped tablet styling', (
+      WidgetTester tester,
+    ) async {
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      for (final Size size in <Size>[
+        const Size(1024, 768),
+        const Size(1280, 800),
+      ]) {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = size;
+        final GlobalKey captureKey = GlobalKey();
+        await tester.pumpWidget(_testApp(captureKey: captureKey));
+        await tester.pumpAndSettle();
+
+        for (final String id in <String>['pre-start', 'post-review']) {
+          _expectActionStyle(
+            tester,
+            id,
+            background: const Color(0xFF2859DB),
+            foreground: Colors.white,
+            hasShadow: true,
+          );
+        }
+        for (final String id in <String>['regular-start', 'regular-review']) {
+          _expectActionStyle(
+            tester,
+            id,
+            background: const Color(0xFFEEF3FF),
+            foreground: const Color(0xFF3F65B9),
+            hasShadow: false,
+          );
+        }
+
+        if (const bool.fromEnvironment('CAPTURE_QUIZZES_BUTTONS')) {
+          final RenderRepaintBoundary boundary = tester.renderObject(
+            find.byKey(captureKey),
+          );
+          await tester.runAsync(() async {
+            final ui.Image image = await boundary.toImage(pixelRatio: 1);
+            final ByteData? bytes = await image.toByteData(
+              format: ui.ImageByteFormat.png,
+            );
+            final Directory directory = Directory(
+              'build/quizzes_button_review',
+            );
+            await directory.create(recursive: true);
+            await File(
+              '${directory.path}/${size.width.toInt()}x${size.height.toInt()}.png',
+            ).writeAsBytes(bytes!.buffer.asUint8List());
+            image.dispose();
+          });
+        }
+        expect(tester.takeException(), isNull);
+      }
+    });
+
+    testWidgets(
+      'filters use real attempt states and update the visible count',
+      (WidgetTester tester) async {
+        await _setLandscapeSize(tester, const Size(1024, 768));
+        await tester.pumpWidget(_testApp());
+        await tester.pumpAndSettle();
+
+        expect(find.text('7 activities'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('assessment_card_pre-start')),
+            matching: find.text('Not started'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('assessment_card_post-review')),
+            matching: find.text('Completed'),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byKey(const Key('assessment_filter_quizzes')));
+        await tester.pumpAndSettle();
+        expect(find.text('4 activities'), findsOneWidget);
+        expect(
+          find.byKey(const Key('assessment_card_pre-start')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const Key('assessment_card_regular-resume')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('assessment_card_regular-resume')),
+            matching: find.text('In progress'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const Key('assessment_card_superseded-start')),
+            matching: find.text('Not started'),
+          ),
+          findsNothing,
+        );
+
+        await tester.tap(
+          find.byKey(const Key('assessment_filter_assessments')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('2 activities'), findsOneWidget);
+        expect(
+          find.byKey(const Key('assessment_card_pre-start')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('assessment_card_post-review')),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byKey(const Key('assessment_filter_completed')));
+        await tester.pumpAndSettle();
+        expect(find.text('2 activities'), findsOneWidget);
+        expect(
+          find.byKey(const Key('assessment_card_post-review')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('assessment_card_regular-review')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('assessment_card_pre-start')),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('shows all records beyond prototype and keeps portrait usable', (
+      WidgetTester tester,
+    ) async {
+      await _setLandscapeSize(tester, const Size(390, 844));
+      final List<Quiz> many = <Quiz>[
+        ..._quizzes,
+        for (int index = 1; index <= 6; index++)
+          _quiz(
+            id: 'more-$index',
+            title:
+                'Extended learning activity $index with a very long descriptive title',
+          ),
+      ];
+      await tester.pumpWidget(_testApp(quizzes: many, reduceMotion: true));
+      await tester.pumpAndSettle();
+      expect(find.text('13 activities'), findsOneWidget);
+      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('assessment_card_more-6')),
+        400,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pump();
+      expect(
+        find.textContaining('Extended learning activity 6'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('back button returns home from a direct catalog route', (
+      WidgetTester tester,
+    ) async {
+      await _setLandscapeSize(tester, const Size(1024, 768));
+      final GoRouter router = GoRouter(
+        initialLocation: AppRoutes.studentQuizzes,
+        routes: <RouteBase>[
+          GoRoute(
+            path: AppRoutes.studentHome,
+            builder: (_, _) => const Scaffold(body: Text('Student home')),
+          ),
+          GoRoute(
+            path: AppRoutes.studentQuizzes,
+            builder: (_, _) => const StudentQuizzesScreen(),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            studentVisibleQuizzesProvider.overrideWith(
+              (Ref ref) => Future<List<Quiz>>.value(_quizzes),
+            ),
+            studentLatestAttemptForQuizProvider.overrideWith(
+              (Ref ref, String id) => Future<QuizAttempt?>.value(_attempts[id]),
+            ),
+          ],
+          child: MaterialApp.router(
+            theme: AppTheme.light,
+            routerConfig: router,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('quizzes_back_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Student home'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -196,6 +414,52 @@ String _buttonLabel(WidgetTester tester, String quizId) {
       .data!;
 }
 
+void _expectActionStyle(
+  WidgetTester tester,
+  String quizId, {
+  required Color background,
+  required Color foreground,
+  required bool hasShadow,
+}) {
+  final Finder action = find.byKey(Key('assessment_action_$quizId'));
+  final Finder buttonFinder = find.descendant(
+    of: action,
+    matching: find.byType(FilledButton),
+  );
+  final FilledButton button = tester.widget<FilledButton>(buttonFinder);
+  final ButtonStyle style = button.style!;
+  expect(style.backgroundColor!.resolve(<WidgetState>{}), background);
+  expect(style.foregroundColor!.resolve(<WidgetState>{}), foreground);
+  expect(style.minimumSize!.resolve(<WidgetState>{})!.height, 48);
+  expect(
+    style.padding!.resolve(<WidgetState>{}),
+    const EdgeInsets.symmetric(horizontal: 14),
+  );
+  expect(style.textStyle!.resolve(<WidgetState>{})!.fontSize, 12);
+  expect(
+    style.textStyle!.resolve(<WidgetState>{})!.fontWeight,
+    FontWeight.w800,
+  );
+  final RoundedRectangleBorder shape =
+      style.shape!.resolve(<WidgetState>{})! as RoundedRectangleBorder;
+  expect(shape.borderRadius, BorderRadius.circular(12));
+  expect(tester.getSize(buttonFinder).height, greaterThanOrEqualTo(48));
+
+  final Icon icon = tester.widget<Icon>(
+    find.descendant(of: action, matching: find.byType(Icon)),
+  );
+  expect(icon.size, 18);
+  final DecoratedBox decoration = tester.widget<DecoratedBox>(
+    find.descendant(of: action, matching: find.byType(DecoratedBox)).first,
+  );
+  final BoxDecoration box = decoration.decoration as BoxDecoration;
+  expect(box.boxShadow?.isNotEmpty ?? false, hasShadow);
+  if (hasShadow) {
+    expect(box.boxShadow!.single.color, const Color(0xFF1E46B5));
+    expect(box.boxShadow!.single.offset, const Offset(0, 3));
+  }
+}
+
 Future<void> _setLandscapeSize(WidgetTester tester, Size size) async {
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -207,6 +471,8 @@ Widget _testApp({
   List<Quiz>? quizzes,
   Future<List<Quiz>> Function()? quizLoader,
   String? attemptErrorQuizId,
+  bool reduceMotion = false,
+  GlobalKey? captureKey,
 }) {
   return ProviderScope(
     key: UniqueKey(),
@@ -225,7 +491,20 @@ Widget _testApp({
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: const StudentQuizzesScreen(),
+      builder:
+          (BuildContext context, Widget? child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(disableAnimations: reduceMotion),
+            child: child!,
+          ),
+      home:
+          captureKey == null
+              ? const StudentQuizzesScreen()
+              : RepaintBoundary(
+                key: captureKey,
+                child: const StudentQuizzesScreen(),
+              ),
     ),
   );
 }

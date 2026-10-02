@@ -5,9 +5,9 @@
 /// return exactly `{rank, full_name, best_endless_streak, avatar_id}` and share this
 /// one model rather than two near-identical classes (see 0036's header on
 /// why the two functions are always consistent with each other: same
-/// grade-scoped, full-population `RANK()` ordering).
+/// grade-scoped, full-population ordering).
 ///
-/// [rank] mirrors Postgres's `rank() over (...)`, which is `bigint`.
+/// [rank] mirrors Postgres's `row_number() over (...)`, which is `bigint`.
 /// supabase-flutter deserializes JSON numbers straight to Dart `int` for
 /// values in the normal range, and this project has no existing
 /// bigint-from-Postgres model that does anything more defensive than that
@@ -24,9 +24,8 @@ class LeaderboardEntry {
     this.avatarId,
   });
 
-  /// Shared rank when tied (`RANK()`, not `ROW_NUMBER()`) — two students
-  /// tied at rank 3 both get `3`, and the next distinct streak is `5`, not
-  /// `4` (see 0036's header).
+  /// Unique, consecutive grade position. Equal streaks are ordered by
+  /// case-insensitive name, then exact name and student ID (0099).
   final int rank;
 
   /// `students.full_name` (0006) — the only student-identifying column

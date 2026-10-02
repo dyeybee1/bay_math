@@ -167,9 +167,8 @@ class EndlessLeaderboardRow extends StatelessWidget {
   }
 }
 
-/// Open podium composition. The server-provided ranks are never rewritten;
-/// tied students retain the same visible rank even when their visual slots
-/// differ because of list order.
+/// Open podium composition. The server-provided consecutive ranks are never
+/// rewritten when the visual slots are arranged around first place.
 class EndlessTopThree extends StatelessWidget {
   const EndlessTopThree({
     super.key,

@@ -111,10 +111,11 @@ class EndlessQuizRepository {
   }
 
   /// The top [limit] (default 50) active students in the caller's own
-  /// grade, ranked by `best_endless_streak` desc — backs the main
-  /// leaderboard list. Grade is auto-detected server-side from the
-  /// caller's own active enrollment (`app.student_current_grade()`); there
-  /// is no grade parameter to pass here, by design (see 0036's header).
+  /// grade, ranked by `best_endless_streak` descending, then name ascending
+  /// for equal streaks (0099) — backs the main leaderboard list. Grade is
+  /// auto-detected server-side from the caller's own active enrollment
+  /// (`app.student_current_grade()`); there is no grade parameter to pass,
+  /// by design (see 0036's header).
   ///
   /// `.rpc()` against a `returns table (...)` function comes back as a
   /// `List<dynamic>` of row maps (the standard supabase-dart shape for a

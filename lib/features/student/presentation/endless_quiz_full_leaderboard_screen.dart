@@ -312,7 +312,7 @@ class _RankingList extends StatelessWidget {
                         style: endlessTitleStyle(18),
                       ),
                       Text(
-                        'Tied students keep the same rank',
+                        'Equal streaks are ordered by name',
                         style: endlessBodyStyle(
                           10.5,
                           color: AppColors.textSecondary,

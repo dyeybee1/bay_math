@@ -9,6 +9,13 @@ import '../../../app/theme/app_colors.dart';
 /// mechanic. Every base surface and semantic state comes from [AppColors].
 abstract final class EndlessQuizColors {
   static const Color pageBackground = Color(0xFFF3F7FC);
+  static const Color challengeBlue = Color(0xFF2859DB);
+  static const Color challengeInk = Color(0xFF24427D);
+  static const Color challengeMuted = Color(0xFF5B6E90);
+  static const Color lavender = Color(0xFF8F69D3);
+  static const Color lavenderSoft = Color(0xFFF0EAFF);
+  static const Color mintSoft = Color(0xFFE6F4EE);
+  static const Color goldSoft = Color(0xFFFFF4D9);
   static const Color streak = AppColors.tertiary;
   static const Color streakSoft = AppColors.tertiaryContainer;
   static const Color success = AppColors.secondary;
@@ -82,12 +89,16 @@ class EndlessQuizHeader extends StatelessWidget {
     required this.subtitle,
     required this.onBack,
     this.action,
+    this.brandLeading = false,
+    this.showBrand = true,
   });
 
   final String title;
   final String subtitle;
   final VoidCallback onBack;
   final Widget? action;
+  final bool brandLeading;
+  final bool showBrand;
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +128,16 @@ class EndlessQuizHeader extends StatelessWidget {
                     onPressed: onBack,
                   ),
                   const SizedBox(width: AppSpacing.md),
+                  if (brandLeading && showBrand) ...<Widget>[
+                    const _BayMathBrand(),
+                    const SizedBox(width: AppSpacing.md),
+                    Container(
+                      width: 1,
+                      height: 32,
+                      color: colors.outlineVariant,
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                  ],
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -145,7 +166,7 @@ class EndlessQuizHeader extends StatelessWidget {
                     action!,
                     const SizedBox(width: AppSpacing.md),
                   ],
-                  const _BayMathBrand(),
+                  if (!brandLeading && showBrand) const _BayMathBrand(),
                 ],
               ),
             ),
